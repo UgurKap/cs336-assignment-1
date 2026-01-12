@@ -1,7 +1,13 @@
 import regex as re
-from .pretokenization import find_chunk_boundaries
 from multiprocessing import Pool
 from collections import Counter
+import cloudpickle
+import sys
+
+try:
+    from .pretokenization import find_chunk_boundaries
+except ImportError:
+    from pretokenization import find_chunk_boundaries
 
 MAX_MERGE_NUM = 20000
 MAX_VOCAB_SIZE = 1000
@@ -26,40 +32,45 @@ def merge_pairs(sequence: tuple[int], old_ids: tuple[int], new_id: int) -> tuple
         i += 1
     return tuple(new_sequence)
 
-
-def get_chunks(input_path: str, num_processes: int, special_tokens: list[str]) -> list[str]:
-    chunks = []
-    with open(input_path, "rb") as f:
-        boundaries = find_chunk_boundaries(f, num_processes, b"<|endoftext|>")
-        for start, end in zip(boundaries[:-1], boundaries[1:]):
-            f.seek(start)
-            chunks += re.split(
-                "|".join(re.escape(s_token) for s_token in special_tokens),
-                f.read(end - start).decode("utf-8", errors="ignore"),
-            )
-    return chunks
-
-
-def parallel_pretokenize(chunk) -> dict[tuple[int], int]:
+def parallel_pretokenize_chunk(args:tuple[str, int, int, list[str]]) -> dict[tuple[int], int]:
+    input_path, start, end, special_tokens = args
+    print(f"Worker starting chunk {start}-{end}", flush=True)
     PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
     frequency_table_bytes = dict()
-    for match in re.finditer(PAT, chunk):
-        catch = (match.captures()[0]).encode("utf-8")
-        if catch == b"<|endoftext|>":
-            continue
-        frequency_table_bytes[catch] = frequency_table_bytes.get(catch, 0) + 1
+
+    with open(input_path, "rb") as f:
+        f.seek(start)
+        text_chunk = f.read(end - start).decode("utf-8", errors="ignore")
+        print(f"Chunk {start}-{end}: splitting on special tokens", file=sys.stderr, flush=True)
+        pieces = re.split("|".join(re.escape(s_token) for s_token in special_tokens), text_chunk)
+
+        print(f"Chunk {start}-{end}: processing {len(pieces)} pieces", file=sys.stderr, flush=True)
+        for piece_idx, piece in enumerate(pieces):
+            if piece_idx % 10000 == 0:
+                print(f"Chunk {start}-{end}: piece {piece_idx}/{len(pieces)}", file=sys.stderr, flush=True)
+            for match in re.finditer(PAT, piece):
+                catch = (match.group(0)).encode("utf-8")
+                frequency_table_bytes[catch] = frequency_table_bytes.get(catch, 0) + 1
+    
+    print(f"Worker finished chunk {start}-{end}", flush=True)
     return frequency_table_bytes
 
 
 def count_frequencies(
     input_path: str, num_processes: int, byte_to_id: dict[int, int], special_tokens: list[str]
 ) -> dict[list[int], int]:
-    chunks = get_chunks(input_path=input_path, num_processes=num_processes, special_tokens=special_tokens)
+    with open(input_path, "rb") as f:
+        boundaries = find_chunk_boundaries(f, num_processes, b"<|endoftext|>")
+
+    chunk_args = [(input_path, start, end, special_tokens) for start, end in zip(boundaries[:-1], boundaries[1:])]
     with Pool(num_processes) as pool:
-        freq_dicts = pool.map(parallel_pretokenize, chunks)
+        async_result = pool.map_async(parallel_pretokenize_chunk, chunk_args)
+        freq_dicts = async_result.get(timeout=300)
+
     frequency_table_bytes = Counter()
     for d in freq_dicts:
         frequency_table_bytes.update(d)
+    del freq_dicts
     return {tuple(byte_to_id[bytes([b])] for b in k): v for k, v in frequency_table_bytes.items()}
 
 
@@ -76,12 +87,22 @@ def train_bpe(
         input_path=input_path, num_processes=num_processes, byte_to_id=byte_to_id, special_tokens=special_tokens
     )
 
+    seq_id_to_sequence = {}
+    seq_id_to_freq = {}
+    pair_to_seq_ids = {}
     pair_dict = {}
-    for token_sequence in frequency_table_token_ids.keys():
+
+    for seq_id, token_sequence in enumerate(frequency_table_token_ids.keys()):
+        seq_id_to_sequence[seq_id] = token_sequence
+        seq_id_to_freq[seq_id] = frequency_table_token_ids[token_sequence]
         for i in range(len(token_sequence) - 1):
-            pair_dict[(token_sequence[i], token_sequence[i + 1])] = (
-                pair_dict.get((token_sequence[i], token_sequence[i + 1]), 0) + frequency_table_token_ids[token_sequence]
-            )
+            pair = (token_sequence[i], token_sequence[i + 1])
+            pair_dict[pair] = pair_dict.get(pair, 0) + frequency_table_token_ids[token_sequence]
+            if pair not in pair_to_seq_ids:
+                pair_to_seq_ids[pair] = set()
+            pair_to_seq_ids[pair].add(seq_id)
+
+    del frequency_table_token_ids
 
     merge_num = 0
     while (len(vocab) < vocab_size) and (merge_num < max_merge_num):
@@ -90,21 +111,43 @@ def train_bpe(
         merges.append(merged_pair)
         vocab[new_id] = vocab[merged_pair[0]] + vocab[merged_pair[1]]
         byte_to_id[vocab[new_id]] = new_id
-        keys_to_replace = []
 
-        for token_sequence in frequency_table_token_ids.keys():
-            new_tuple = merge_pairs(token_sequence, merged_pair, new_id)
-            if len(token_sequence) != len(new_tuple):
-                keys_to_replace.append((token_sequence, new_tuple))
+        if merged_pair in pair_to_seq_ids:
+            affected_seq_ids = list(pair_to_seq_ids[merged_pair])
+            for seq_id in affected_seq_ids:
+                old_sequence = seq_id_to_sequence[seq_id]
+                new_sequence = merge_pairs(old_sequence, merged_pair, new_id)
+                if len(old_sequence) != len(new_sequence):
+                    freq = seq_id_to_freq[seq_id]
 
-        for old_key, new_key in keys_to_replace:
-            num_changes = frequency_table_token_ids.pop(old_key)
-            frequency_table_token_ids[new_key] = num_changes
-            for i in range(len(old_key) - 1):
-                pair_dict[(old_key[i], old_key[i + 1])] -= num_changes
-            for i in range(len(new_key) - 1):
-                pair_dict[(new_key[i], new_key[i + 1])] = pair_dict.get((new_key[i], new_key[i + 1]), 0) + num_changes
+                    for i in range(len(old_sequence) - 1):
+                        old_pair = (old_sequence[i], old_sequence[i + 1])
+                        pair_dict[old_pair] -= freq
+                        if old_pair in pair_to_seq_ids:
+                            pair_to_seq_ids[old_pair].discard(seq_id)
+                            if len(pair_to_seq_ids[old_pair]) == 0:
+                                del pair_to_seq_ids[old_pair]
+
+                    seq_id_to_sequence[seq_id] = new_sequence
+
+                    for i in range(len(new_sequence) - 1):
+                        new_pair = (new_sequence[i], new_sequence[i + 1])
+                        pair_dict[new_pair] = pair_dict.get(new_pair, 0) + freq
+                        if new_pair not in pair_to_seq_ids:
+                            pair_to_seq_ids[new_pair] = set()
+                        pair_to_seq_ids[new_pair].add(seq_id)
 
         merge_num += 1
 
     return vocab, [(vocab[a], vocab[b]) for (a, b) in merges]
+
+def main():
+    vocab, merges = train_bpe(input_path="/home/ugurkap/stanford-cs336-assignments/assignment1-basics/data/TinyStoriesV2-GPT4-train.txt", vocab_size=10_000, special_tokens=["<|endoftext|>"], num_processes=6)
+    print("Training complete, saving the vocabulary and list of merges to disk now")
+    with open("vocab.pickle", "wb") as f:
+        cloudpickle.dump(vocab, f)
+    with open("merges.pickle", "wb") as f:
+        cloudpickle.dump(merges, f)
+
+if __name__ == "__main__":
+    main()
