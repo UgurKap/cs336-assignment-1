@@ -144,9 +144,9 @@ def train_bpe(
 def main():
     vocab, merges = train_bpe(input_path="/home/ugurkap/stanford-cs336-assignments/assignment1-basics/data/TinyStoriesV2-GPT4-train.txt", vocab_size=10_000, special_tokens=["<|endoftext|>"], num_processes=6)
     print("Training complete, saving the vocabulary and list of merges to disk now")
-    with open("vocab.pickle", "wb") as f:
+    with open("tiny_vocab.pickle", "wb") as f:
         cloudpickle.dump(vocab, f)
-    with open("merges.pickle", "wb") as f:
+    with open("tiny_merges.pickle", "wb") as f:
         cloudpickle.dump(merges, f)
 
 if __name__ == "__main__":
