@@ -31,31 +31,40 @@ def merge_pairs(sequence: tuple[int], old_ids: tuple[int], new_id: int) -> tuple
 
 
 def parallel_pretokenize_chunk(args: tuple[str, int, int, list[str]]) -> dict[tuple[int], int]:
-    input_path, start, end, special_tokens = args
-    print(f"Worker starting chunk {start}-{end}", flush=True)
+    input_path, start, end, special_tokens, verbose = args
+    if verbose:
+        print(f"Worker starting chunk {start}-{end}", flush=True)
     PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
     frequency_table_bytes = dict()
 
     with open(input_path, "rb") as f:
         f.seek(start)
         text_chunk = f.read(end - start).decode("utf-8", errors="ignore")
-        print(f"Chunk {start}-{end}: splitting on special tokens", file=sys.stderr, flush=True)
+        if verbose:
+            print(f"Chunk {start}-{end}: splitting on special tokens", file=sys.stderr, flush=True)
         pieces = re.split("|".join(re.escape(s_token) for s_token in special_tokens), text_chunk)
 
-        print(f"Chunk {start}-{end}: processing {len(pieces)} pieces", file=sys.stderr, flush=True)
+        if verbose:
+            print(f"Chunk {start}-{end}: processing {len(pieces)} pieces", file=sys.stderr, flush=True)
         for piece_idx, piece in enumerate(pieces):
-            if piece_idx % 10000 == 0:
+            if piece_idx % 10000 == 0 and verbose:
                 print(f"Chunk {start}-{end}: piece {piece_idx}/{len(pieces)}", file=sys.stderr, flush=True)
             for match in re.finditer(PAT, piece):
                 catch = (match.group(0)).encode("utf-8")
                 frequency_table_bytes[catch] = frequency_table_bytes.get(catch, 0) + 1
 
-    print(f"Worker finished chunk {start}-{end}", flush=True)
+    if verbose:
+        print(f"Worker finished chunk {start}-{end}", flush=True)
     return frequency_table_bytes
 
 
 def count_frequencies(
-    input_path: str, num_processes: int, num_chunks: int, byte_to_id: dict[int, int], special_tokens: list[str]
+    input_path: str,
+    num_processes: int,
+    num_chunks: int,
+    byte_to_id: dict[int, int],
+    special_tokens: list[str],
+    verbose: bool = False,
 ) -> dict[list[int], int]:
     if num_processes > num_chunks:
         print("Setting num_processes = num_chunks, there cannot be more processes than the number of chunks")
@@ -64,7 +73,9 @@ def count_frequencies(
     with open(input_path, "rb") as f:
         boundaries = find_chunk_boundaries(f, num_chunks, b"<|endoftext|>")
 
-    chunk_args = [(input_path, start, end, special_tokens) for start, end in zip(boundaries[:-1], boundaries[1:])]
+    chunk_args = [
+        (input_path, start, end, special_tokens, verbose) for start, end in zip(boundaries[:-1], boundaries[1:])
+    ]
     with Pool(num_processes) as pool:
         async_result = pool.map_async(parallel_pretokenize_chunk, chunk_args, chunksize=1)
         freq_dicts = async_result.get(timeout=3000)
@@ -98,14 +109,14 @@ def train_bpe(
         special_tokens=special_tokens,
     )
 
-    seq_id_to_sequence = {}
-    seq_id_to_freq = {}
+    seq_id_to_sequence = list()
+    seq_id_to_freq = list()
     pair_to_seq_ids = {}
     pair_dict = {}
 
     for seq_id, token_sequence in enumerate(frequency_table_token_ids.keys()):
-        seq_id_to_sequence[seq_id] = token_sequence
-        seq_id_to_freq[seq_id] = frequency_table_token_ids[token_sequence]
+        seq_id_to_sequence.append(token_sequence)
+        seq_id_to_freq.append(frequency_table_token_ids[token_sequence])
         for i in range(len(token_sequence) - 1):
             pair = (token_sequence[i], token_sequence[i + 1])
             pair_dict[pair] = pair_dict.get(pair, 0) + frequency_table_token_ids[token_sequence]
