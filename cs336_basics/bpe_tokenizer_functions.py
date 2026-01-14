@@ -9,6 +9,7 @@ try:
 except ImportError:
     from pretokenization import find_chunk_boundaries
 
+
 def init_vocabulary(special_tokens: list[str]) -> dict[int, bytes]:
     special_tokens = [token.encode("utf-8") for token in special_tokens]
     vocabulary_tokens = [bytes([i]) for i in range(256)]
@@ -28,7 +29,8 @@ def merge_pairs(sequence: tuple[int], old_ids: tuple[int], new_id: int) -> tuple
         i += 1
     return tuple(new_sequence)
 
-def parallel_pretokenize_chunk(args:tuple[str, int, int, list[str]]) -> dict[tuple[int], int]:
+
+def parallel_pretokenize_chunk(args: tuple[str, int, int, list[str]]) -> dict[tuple[int], int]:
     input_path, start, end, special_tokens = args
     print(f"Worker starting chunk {start}-{end}", flush=True)
     PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
@@ -47,7 +49,7 @@ def parallel_pretokenize_chunk(args:tuple[str, int, int, list[str]]) -> dict[tup
             for match in re.finditer(PAT, piece):
                 catch = (match.group(0)).encode("utf-8")
                 frequency_table_bytes[catch] = frequency_table_bytes.get(catch, 0) + 1
-    
+
     print(f"Worker finished chunk {start}-{end}", flush=True)
     return frequency_table_bytes
 
@@ -75,7 +77,12 @@ def count_frequencies(
 
 
 def train_bpe(
-    input_path: str, vocab_size: int, special_tokens: list[str], num_processes: int = 4, num_chunks: int = 4, max_merge_num: int = None
+    input_path: str,
+    vocab_size: int,
+    special_tokens: list[str],
+    num_processes: int = 4,
+    num_chunks: int = 4,
+    max_merge_num: int = None,
 ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
     if max_merge_num is None:
         max_merge_num = vocab_size
@@ -84,7 +91,11 @@ def train_bpe(
     merges = list()
 
     frequency_table_token_ids = count_frequencies(
-        input_path=input_path, num_processes=num_processes, num_chunks=num_chunks, byte_to_id=byte_to_id, special_tokens=special_tokens
+        input_path=input_path,
+        num_processes=num_processes,
+        num_chunks=num_chunks,
+        byte_to_id=byte_to_id,
+        special_tokens=special_tokens,
     )
 
     seq_id_to_sequence = {}
@@ -141,6 +152,7 @@ def train_bpe(
 
     return vocab, [(vocab[a], vocab[b]) for (a, b) in merges]
 
+
 def main():
     # vocab, merges = train_bpe(input_path="/home/ugurkap/stanford-cs336-assignments/assignment1-basics/data/TinyStoriesV2-GPT4-train.txt", vocab_size=10_000, special_tokens=["<|endoftext|>"], num_processes=6)
     # print("Training complete, saving the vocabulary and list of merges to disk now")
@@ -148,7 +160,13 @@ def main():
     #     cloudpickle.dump(vocab, f)
     # with open("tiny_merges_.pickle", "wb") as f:
     #     cloudpickle.dump(merges, f)
-    vocab, merges = train_bpe(input_path="/home/ugurkap/stanford-cs336-assignments/assignment1-basics/data/owt_train.txt", vocab_size=32_000, special_tokens=["<|endoftext|>"], num_processes=6, num_chunks=48)
+    vocab, merges = train_bpe(
+        input_path="/home/ugurkap/stanford-cs336-assignments/assignment1-basics/data/owt_train.txt",
+        vocab_size=32_000,
+        special_tokens=["<|endoftext|>"],
+        num_processes=6,
+        num_chunks=48,
+    )
     print("Training complete, saving the vocabulary and list of merges to disk now")
     with open("owt_vocab.pickle", "wb") as f:
         cloudpickle.dump(vocab, f)
