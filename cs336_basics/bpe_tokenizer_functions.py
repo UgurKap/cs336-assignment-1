@@ -9,10 +9,6 @@ try:
 except ImportError:
     from pretokenization import find_chunk_boundaries
 
-MAX_MERGE_NUM = 20000
-MAX_VOCAB_SIZE = 1000
-
-
 def init_vocabulary(special_tokens: list[str]) -> dict[int, bytes]:
     special_tokens = [token.encode("utf-8") for token in special_tokens]
     vocabulary_tokens = [bytes([i]) for i in range(256)]
@@ -57,15 +53,19 @@ def parallel_pretokenize_chunk(args:tuple[str, int, int, list[str]]) -> dict[tup
 
 
 def count_frequencies(
-    input_path: str, num_processes: int, byte_to_id: dict[int, int], special_tokens: list[str]
+    input_path: str, num_processes: int, num_chunks: int, byte_to_id: dict[int, int], special_tokens: list[str]
 ) -> dict[list[int], int]:
+    if num_processes > num_chunks:
+        print("Setting num_processes = num_chunks, there cannot be more processes than the number of chunks")
+        num_processes = num_chunks
+
     with open(input_path, "rb") as f:
-        boundaries = find_chunk_boundaries(f, num_processes, b"<|endoftext|>")
+        boundaries = find_chunk_boundaries(f, num_chunks, b"<|endoftext|>")
 
     chunk_args = [(input_path, start, end, special_tokens) for start, end in zip(boundaries[:-1], boundaries[1:])]
     with Pool(num_processes) as pool:
-        async_result = pool.map_async(parallel_pretokenize_chunk, chunk_args)
-        freq_dicts = async_result.get(timeout=300)
+        async_result = pool.map_async(parallel_pretokenize_chunk, chunk_args, chunksize=1)
+        freq_dicts = async_result.get(timeout=3000)
 
     frequency_table_bytes = Counter()
     for d in freq_dicts:
@@ -75,7 +75,7 @@ def count_frequencies(
 
 
 def train_bpe(
-    input_path: str, vocab_size: int, special_tokens: list[str], num_processes: int = 4, max_merge_num: int = None
+    input_path: str, vocab_size: int, special_tokens: list[str], num_processes: int = 4, num_chunks: int = 4, max_merge_num: int = None
 ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
     if max_merge_num is None:
         max_merge_num = vocab_size
@@ -84,7 +84,7 @@ def train_bpe(
     merges = list()
 
     frequency_table_token_ids = count_frequencies(
-        input_path=input_path, num_processes=num_processes, byte_to_id=byte_to_id, special_tokens=special_tokens
+        input_path=input_path, num_processes=num_processes, num_chunks=num_chunks, byte_to_id=byte_to_id, special_tokens=special_tokens
     )
 
     seq_id_to_sequence = {}
@@ -142,12 +142,19 @@ def train_bpe(
     return vocab, [(vocab[a], vocab[b]) for (a, b) in merges]
 
 def main():
-    vocab, merges = train_bpe(input_path="/home/ugurkap/stanford-cs336-assignments/assignment1-basics/data/TinyStoriesV2-GPT4-train.txt", vocab_size=10_000, special_tokens=["<|endoftext|>"], num_processes=6)
+    # vocab, merges = train_bpe(input_path="/home/ugurkap/stanford-cs336-assignments/assignment1-basics/data/TinyStoriesV2-GPT4-train.txt", vocab_size=10_000, special_tokens=["<|endoftext|>"], num_processes=6)
+    # print("Training complete, saving the vocabulary and list of merges to disk now")
+    # with open("tiny_vocab_.pickle", "wb") as f:
+    #     cloudpickle.dump(vocab, f)
+    # with open("tiny_merges_.pickle", "wb") as f:
+    #     cloudpickle.dump(merges, f)
+    vocab, merges = train_bpe(input_path="/home/ugurkap/stanford-cs336-assignments/assignment1-basics/data/owt_train.txt", vocab_size=32_000, special_tokens=["<|endoftext|>"], num_processes=6, num_chunks=48)
     print("Training complete, saving the vocabulary and list of merges to disk now")
-    with open("tiny_vocab.pickle", "wb") as f:
+    with open("owt_vocab.pickle", "wb") as f:
         cloudpickle.dump(vocab, f)
-    with open("tiny_merges.pickle", "wb") as f:
+    with open("owt_merges.pickle", "wb") as f:
         cloudpickle.dump(merges, f)
+
 
 if __name__ == "__main__":
     main()
