@@ -5,7 +5,8 @@ from pathlib import Path
 import regex as re
 from copy import deepcopy
 
-import os, json
+import os
+import json
 from functools import lru_cache
 import tiktoken
 
@@ -24,7 +25,7 @@ class Tokenizer:
         else:
             self.special_tokens = []
 
-        self.special_tokens = sorted(self.special_tokens, key=len, reverse=True) # Longest special token first
+        self.special_tokens = sorted(self.special_tokens, key=len, reverse=True)  # Longest special token first
         for s_token in self.special_tokens:
             if s_token not in self.byte_to_id:
                 self.byte_to_id[s_token] = len(vocab)
@@ -44,22 +45,26 @@ class Tokenizer:
         return cls(vocab, merges, special_tokens)
 
     def encode(self, text: str) -> list[int]:
-        pieces = re.split(
-            "(" + "|".join(re.escape(s_token.decode("utf-8")) for s_token in self.special_tokens) + ")", text
-        )
+        if len(self.special_tokens) > 0:
+            pieces = re.split(
+                "(" + "|".join(re.escape(s_token.decode("utf-8")) for s_token in self.special_tokens) + ")", text
+            )
+        else:
+            pieces = [text]
+
         encoded_sequence = list()
 
         for piece in pieces:
             if (encoded := piece.encode("utf-8")) in self.special_tokens:
                 encoded_sequence += [self.byte_to_id[encoded]]
             else:
-                chunk_tokens = list()
                 for match in re.finditer(self.regex_pattern, piece):
                     catch = (match.group(0)).encode("utf-8")
-                    chunk_tokens += [self.byte_to_id[bytes([c])] for c in catch]                                
-                for merge_pair in self.merges:
-                    chunk_tokens = self.merge_pairs(chunk_tokens, merge_pair)
-                encoded_sequence.extend(chunk_tokens)
+                    chunk_tokens = [self.byte_to_id[bytes([c])] for c in catch]
+                    for merge_pair in self.merges:
+                        chunk_tokens = self.merge_pairs(chunk_tokens, merge_pair)
+
+                    encoded_sequence.extend(chunk_tokens)
 
         return encoded_sequence
 
@@ -122,7 +127,11 @@ def main():
         """
         # These 188 integers can used as-is, since they are not whitespace or control characters.
         # See https://www.ssec.wisc.edu/~tomw/java/unicode.html.
-        bs = list(range(ord("!"), ord("~") + 1)) + list(range(ord("¡"), ord("¬") + 1)) + list(range(ord("®"), ord("ÿ") + 1))
+        bs = (
+            list(range(ord("!"), ord("~") + 1))
+            + list(range(ord("¡"), ord("¬") + 1))
+            + list(range(ord("®"), ord("ÿ") + 1))
+        )
         cs = bs[:]
         # now get the representations of the other 68 integers that do need shifting
         # each will get mapped chr(256 + n), where n will grow from 0...67 in the loop
@@ -178,7 +187,9 @@ def main():
 
     reference_tokenizer = tiktoken.get_encoding("gpt2")
     tokenizer = get_tokenizer_from_vocab_merges_path(
-        vocab_path="/home/ugurkap/stanford-cs336-assignments/assignment1-basics/tests/fixtures/gpt2_vocab.json", merges_path="/home/ugurkap/stanford-cs336-assignments/assignment1-basics/tests/fixtures/gpt2_merges.txt")
+        vocab_path="/home/ugurkap/stanford-cs336-assignments/assignment1-basics/tests/fixtures/gpt2_vocab.json",
+        merges_path="/home/ugurkap/stanford-cs336-assignments/assignment1-basics/tests/fixtures/gpt2_merges.txt",
+    )
     corpus_path = "/home/ugurkap/stanford-cs336-assignments/assignment1-basics/tests/fixtures/address.txt"
     with open(corpus_path) as f:
         corpus_contents = f.read()
@@ -189,7 +200,6 @@ def main():
     assert tokenizer.decode(ids) == corpus_contents
     assert reference_tokenizer.decode(reference_ids) == corpus_contents
 
-    
 
 if __name__ == "__main__":
     main()
