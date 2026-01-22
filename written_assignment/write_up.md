@@ -65,10 +65,10 @@ will raise `UnicodeDecodeError: 'utf-8' codec can't decode byte 0xbf in position
 
 3. Estimate the throughput of your tokenizer (e.g., in bytes/second). How long would it take to tokenize the Pile dataset (825GB of text)?
 --> Input processing speed is highly dependent on the vocabulary size (and the number of merges).
-    OWT Input Throughput: ~2145.49 bytes/second
-    TinyStories Input Throughput: ~6509.11 bytes/second
-    Pile Dataset Processing for OWT Tokenizer: 825e+9 / 2145.49 = ~12 years
-    Pile Dataset Processing for TinyStories Tokenizer: 825e+9 / 6509.11 = ~4 years
+    OWT Input Throughput: ~713258.83 bytes/second
+    TinyStories Input Throughput: ~697562.09 bytes/second
+    Pile Dataset Processing for OWT Tokenizer: 825e+9 / 713258.83 = ~14 days
+    Pile Dataset Processing for TinyStories Tokenizer: 825e+9 / 697562.09 = ~14 days
 
 4. Using your TinyStories and OpenWebText tokenizers, encode the respective training and development datasets into a sequence of integer token IDs. We’ll use this later to train our language model. We recommend serializing the token IDs as a NumPy array of datatype uint16. Why is uint16 an appropriate choice?
 --> uint8 has a maximum value of 255, and uint16 has a maximum value of 65535, which can represent each of the 32k tokens in the vocabulary. Having the data type unsigned signals these are supposed to be positive numbers, and potentially make it more extensible, i.e. for continued pretraining. We do not want to waste the negative 32k range.
