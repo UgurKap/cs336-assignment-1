@@ -76,11 +76,14 @@ class Tokenizer:
 
                         # Merge loop
                         while True:
-                            min_idx = min(range(len(chunk_pairs)), key=lambda x: chunk_pairs[x][1])
-                            pair, rank = chunk_pairs[min_idx]
+                            min_idx, rank = 0, chunk_pairs[0][1]
+                            for i in range(1, len(chunk_pairs)):
+                                if chunk_pairs[i][1] < rank:
+                                    min_idx, rank = i, chunk_pairs[i][1]
                             if rank == inf:
                                 break
 
+                            pair = chunk_pairs[min_idx][0]
                             left = chunk_pairs[: max(0, min_idx - 1)]  # can be empty, can have elements
                             right = chunk_pairs[min_idx + 2 :]  # can be empty, can have elements
 
@@ -179,6 +182,8 @@ def main():
     benchmark_tokenizer(tiny_tokenizer, owt_samples, "<|endoftext|>", "TinyStories Tokenizer on OWT Dataset")
 
     # Process the training and validation sets
+    print("Processing datasets...")
+
     owt_train_out = []
     with open(Path("/home/ugurkap/stanford-cs336-assignments/assignment1-basics/data/owt_train.txt").absolute()) as f:
         for _id in owt_tokenizer.encode_iterable(f):
@@ -221,6 +226,8 @@ def main():
         Path("/home/ugurkap/stanford-cs336-assignments/assignment1-basics/data/tiny_valid_tokens.npy").absolute(),
         np.array(tiny_valid_out, dtype=np.uint16),
     )
+
+    print("All datasets processed and saved.")
 
 
 if __name__ == "__main__":
