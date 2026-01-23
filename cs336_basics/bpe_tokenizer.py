@@ -5,6 +5,7 @@ from pathlib import Path
 import regex as re
 import numpy as np
 from math import inf
+import array
 
 
 try:
@@ -154,24 +155,20 @@ class Tokenizer:
 
 def main():
     owt_tokenizer = Tokenizer.from_files(
-        vocab_filepath="/home/ugurkap/stanford-cs336-assignments/assignment1-basics/owt_vocab.pickle",
-        merges_filepath="/home/ugurkap/stanford-cs336-assignments/assignment1-basics/owt_merges.pickle",
+        vocab_filepath="/root/cs336-assignment-1/owt_vocab.pickle",
+        merges_filepath="/root/cs336-assignment-1/owt_merges.pickle",
         special_tokens=["<|endoftext|>"],
     )
     tiny_tokenizer = Tokenizer.from_files(
-        vocab_filepath="/home/ugurkap/stanford-cs336-assignments/assignment1-basics/tiny_vocab.pickle",
-        merges_filepath="/home/ugurkap/stanford-cs336-assignments/assignment1-basics/tiny_merges.pickle",
+        vocab_filepath="/root/cs336-assignment-1/tiny_vocab.pickle",
+        merges_filepath="/root/cs336-assignment-1/tiny_merges.pickle",
         special_tokens=["<|endoftext|>"],
     )
 
     # Benchmarking
 
-    owt_samples = sample_from_txt(
-        "/home/ugurkap/stanford-cs336-assignments/assignment1-basics/data/owt_valid.txt", num_samples=10
-    )
-    tiny_samples = sample_from_txt(
-        "/home/ugurkap/stanford-cs336-assignments/assignment1-basics/data/TinyStoriesV2-GPT4-valid.txt", num_samples=10
-    )
+    owt_samples = sample_from_txt("/root/cs336-assignment-1/data/owt_valid.txt", num_samples=10)
+    tiny_samples = sample_from_txt("/root/cs336-assignment-1/data/TinyStoriesV2-GPT4-valid.txt", num_samples=10)
 
     benchmark_tokenizer(owt_tokenizer, owt_samples, "<|endoftext|>", "OWT")
     print()
@@ -184,46 +181,42 @@ def main():
     # Process the training and validation sets
     print("Processing datasets...")
 
-    owt_train_out = []
-    with open(Path("/home/ugurkap/stanford-cs336-assignments/assignment1-basics/data/owt_train.txt").absolute()) as f:
+    owt_train_out = array.array("H")
+    with open(Path("/root/cs336-assignment-1/data/owt_train.txt").absolute()) as f:
         for _id in owt_tokenizer.encode_iterable(f):
             owt_train_out.append(_id)
     np.save(
-        Path("/home/ugurkap/stanford-cs336-assignments/assignment1-basics/data/owt_train_tokens.npy").absolute(),
+        Path("/root/cs336-assignment-1/data/owt_train_tokens.npy").absolute(),
         np.array(owt_train_out, dtype=np.uint16),
     )
     del owt_train_out
 
-    owt_valid_out = []
-    with open(Path("/home/ugurkap/stanford-cs336-assignments/assignment1-basics/data/owt_valid.txt").absolute()) as f:
+    owt_valid_out = array.array("H")
+    with open(Path("/root/cs336-assignment-1/data/owt_valid.txt").absolute()) as f:
         for _id in owt_tokenizer.encode_iterable(f):
             owt_valid_out.append(_id)
     np.save(
-        Path("/home/ugurkap/stanford-cs336-assignments/assignment1-basics/data/owt_valid_tokens.npy").absolute(),
+        Path("/root/cs336-assignment-1/data/owt_valid_tokens.npy").absolute(),
         np.array(owt_valid_out, dtype=np.uint16),
     )
     del owt_valid_out
 
-    tiny_train_out = []
-    with open(
-        Path("/home/ugurkap/stanford-cs336-assignments/assignment1-basics/data/TinyStoriesV2-GPT4-train.txt").absolute()
-    ) as f:
+    tiny_train_out = array.array("H")
+    with open(Path("/root/cs336-assignment-1/data/TinyStoriesV2-GPT4-train.txt").absolute()) as f:
         for _id in tiny_tokenizer.encode_iterable(f):
             tiny_train_out.append(_id)
     np.save(
-        Path("/home/ugurkap/stanford-cs336-assignments/assignment1-basics/data/tiny_train_tokens.npy").absolute(),
+        Path("/root/cs336-assignment-1/data/tiny_train_tokens.npy").absolute(),
         np.array(tiny_train_out, dtype=np.uint16),
     )
     del tiny_train_out
 
-    tiny_valid_out = []
-    with open(
-        Path("/home/ugurkap/stanford-cs336-assignments/assignment1-basics/data/TinyStoriesV2-GPT4-valid.txt").absolute()
-    ) as f:
+    tiny_valid_out = array.array("H")
+    with open(Path("/root/cs336-assignment-1/data/TinyStoriesV2-GPT4-valid.txt").absolute()) as f:
         for _id in tiny_tokenizer.encode_iterable(f):
             tiny_valid_out.append(_id)
     np.save(
-        Path("/home/ugurkap/stanford-cs336-assignments/assignment1-basics/data/tiny_valid_tokens.npy").absolute(),
+        Path("/root/cs336-assignment-1/data/tiny_valid_tokens.npy").absolute(),
         np.array(tiny_valid_out, dtype=np.uint16),
     )
 
