@@ -138,20 +138,6 @@ class Tokenizer:
     def __len__(self):
         return len(self.vocab)
 
-    def merge_pairs(self, sequence: list[int], old_tokens: tuple[bytes]) -> list[int]:
-        old_token_ids = (self.byte_to_id[old_tokens[0]], self.byte_to_id[old_tokens[1]])
-        new_token_id = self.byte_to_id[old_tokens[0] + old_tokens[1]]
-        new_sequence = []
-        i = 0
-        while i < len(sequence):
-            if (i < len(sequence) - 1) and (sequence[i] == old_token_ids[0]) and (sequence[i + 1] == old_token_ids[1]):
-                new_sequence.append(new_token_id)
-                i += 2
-            else:
-                new_sequence.append(sequence[i])
-                i += 1
-        return new_sequence
-
 
 def main():
     owt_tokenizer = Tokenizer.from_files(
