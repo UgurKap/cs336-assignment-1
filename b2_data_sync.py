@@ -106,7 +106,8 @@ class B2Sync:
 
             # Download file
             try:
-                self.bucket.download_file_by_name(file_name=b2_file_name, local_file=str(local_path))
+                downloaded_file = self.bucket.download_file_by_name(b2_file_name)
+                downloaded_file.save_to(str(local_path))
                 size_mb = file_version_info.size / (1024 * 1024)
                 tqdm.write(f"Downloaded: {b2_file_name} ({size_mb:.2f} MB)")
             except Exception as e:
