@@ -23,6 +23,8 @@ dependencies = [
     "pip>=25.3",
     "ipykernel>=7.1.0",
     "scalene>=1.5.55",
+    "b2sdk>=2.10.2",
+    "python-dotenv>=1.2.1",
 ]
 
 [build-system]
