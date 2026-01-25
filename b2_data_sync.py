@@ -164,7 +164,7 @@ Examples:
   python b2_data_sync.py list                         # List files in bucket
 
 Setup:
-  1. Install dependencies: pip install b2sdk python-dotenv tqdm
+  1. Install dependencies: uv sync
   2. Create .env file in project root with:
        B2_APP_KEY_ID=your_key_id
        B2_APP_KEY=your_application_key
@@ -179,6 +179,10 @@ Setup:
     )
 
     args = parser.parse_args()
+
+    # Validate that download/list commands don't have extra arguments
+    if args.command in ["download", "list"] and args.files:
+        parser.error(f"{args.command} command does not accept file arguments")
 
     try:
         sync = B2Sync()
