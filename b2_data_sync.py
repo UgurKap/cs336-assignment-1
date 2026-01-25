@@ -10,6 +10,7 @@ Usage:
 """
 
 import argparse
+import glob
 import os
 import sys
 from pathlib import Path
@@ -23,7 +24,8 @@ class B2Sync:
     """Handle Backblaze B2 bucket synchronization."""
 
     def __init__(self):
-        load_dotenv()
+        self.project_root = Path(__file__).parent
+        load_dotenv(dotenv_path=self.project_root / ".env")
 
         self.app_key_id = os.getenv("B2_APP_KEY_ID")
         self.app_key = os.getenv("B2_APP_KEY")
@@ -33,8 +35,6 @@ class B2Sync:
             print("Error: Missing B2 credentials in .env file")
             print("Required variables: B2_APP_KEY_ID, B2_APP_KEY, B2_BUCKET_NAME")
             sys.exit(1)
-
-        self.project_root = Path(__file__).parent
 
         # Initialize B2 API
         info = InMemoryAccountInfo()
@@ -52,15 +52,17 @@ class B2Sync:
         # Expand glob patterns and resolve paths
         file_paths = []
         for file_pattern in files:
-            path = Path(file_pattern)
-            if "*" in file_pattern or "?" in file_pattern:
-                # Handle glob patterns
-                matches = list(self.project_root.glob(file_pattern))
-                file_paths.extend([f for f in matches if f.is_file()])
-            elif path.exists() and path.is_file():
-                file_paths.append(path)
+            # Use glob.glob for robust pattern matching
+            matches = glob.glob(file_pattern, recursive=True)
+            if matches:
+                file_paths.extend([Path(f) for f in matches if Path(f).is_file()])
             else:
-                print(f"Warning: File not found or is not a file: {file_pattern}")
+                # No matches - check if it's a literal file path
+                path = Path(file_pattern)
+                if path.exists() and path.is_file():
+                    file_paths.append(path)
+                else:
+                    print(f"Warning: File not found or is not a file: {file_pattern}")
 
         if not file_paths:
             print("No valid files found to upload")
@@ -103,6 +105,20 @@ class B2Sync:
             b2_file_name = file_version_info.file_name
             # Download to data/ directory
             local_path = data_dir / b2_file_name
+
+            # Validate path to prevent directory traversal attacks
+            try:
+                resolved_path = local_path.resolve()
+                data_dir_resolved = data_dir.resolve()
+                if not resolved_path.is_relative_to(data_dir_resolved):
+                    tqdm.write(f"Skipping {b2_file_name}: path traversal attempt detected")
+                    continue
+            except (ValueError, OSError) as e:
+                tqdm.write(f"Skipping {b2_file_name}: invalid path ({e})")
+                continue
+
+            # Create parent directories if they don't exist
+            local_path.parent.mkdir(parents=True, exist_ok=True)
 
             # Download file
             try:
