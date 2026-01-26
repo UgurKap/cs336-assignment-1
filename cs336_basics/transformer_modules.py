@@ -1,6 +1,6 @@
 import torch
 from torch.nn import Module, init, Parameter
-from einops import einsum
+from einops import einsum, reduce
 from math import sqrt
 from jaxtyping import Float, Int
 from torch import Tensor
@@ -43,3 +43,18 @@ class Embedding(Module):
 
     def forward(self, x: Int[Tensor, "batch_size seq_len"]) -> Float[Tensor, "batch_size seq_len embedding_dim"]:
         return self.embeddings[x]
+
+
+class RMSNorm(Module):
+    def __init__(
+        self, d_model: int, eps: float = 1e-5, device: torch.device | None = None, dtype: torch.dtype | None = None
+    ):
+        super().__init__()
+        self.g = Parameter(torch.ones(size=(d_model,), device=device, dtype=dtype))
+        self.eps = eps
+
+    def forward(self, x: Float[Tensor, "batch_size seq_len d_model"]) -> Float[Tensor, "batch_size seq_len d_model"]:
+        in_dtype = x.dtype
+        x = x.to(torch.float32)
+        result = (x / torch.sqrt(reduce(x * x, "... d_model -> ... 1", "mean") + self.eps)) * self.g
+        return result.to(in_dtype)
