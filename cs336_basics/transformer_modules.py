@@ -1,7 +1,7 @@
 import torch
 from torch.nn import Module, init, Parameter
-from einops import einsum, reduce
-from math import sqrt
+from einops import einsum, reduce, rearrange, repeat
+from math import sqrt, log
 from jaxtyping import Float, Int
 from torch import Tensor
 
@@ -80,3 +80,30 @@ class SwiGLU(Module):
         op1 = self.silu(self.W1(x))
         op2 = self.W3(x)
         return self.W2(op1 * op2)
+
+
+class RotaryPositionalEmbedding(Module):
+    def __init__(self, theta: float, d_k: int, max_seq_len: int, device=None):
+        super().__init__()
+        assert d_k % 2 == 0, "d_k should be divisible by 2"
+        freqs = torch.exp(torch.tensor([-2 * k * log(theta) / (d_k) for k in range(d_k // 2)]))
+        positions = torch.arange(0, max_seq_len)
+        self.register_buffer(
+            "cos_matrix",
+            tensor=torch.cos(rearrange(positions, "seq_len -> seq_len 1") * rearrange(freqs, "d -> 1 d")),
+            persistent=False,
+        )
+        self.register_buffer(
+            "sin_matrix",
+            tensor=torch.sin(rearrange(positions, "seq_len -> seq_len 1") * rearrange(freqs, "d -> 1 d")),
+            persistent=False,
+        )
+
+    def forward(self, x: Float[Tensor, "... seq_len d_k"], token_positions: Int[Tensor, "... seq_len"]) -> Float[Tensor, "... seq_len d_k"]:
+        el1 = repeat(self.cos_matrix[token_positions, ...], "seq_len d -> seq_len (d 2)") * x
+        el2 = repeat(self.sin_matrix[token_positions, ...], "seq_len d -> seq_len (d 2)") * rearrange(
+            rearrange(x, "... seq_len (d_k f) -> ... seq_len d_k f", f=2).flip(dims=[-1])
+            * torch.tensor([-1, 1], device=x.device, dtype=x.dtype),
+            "... seq_len d_k f -> ... seq_len (d_k f)",
+        )
+        return el1 + el2
