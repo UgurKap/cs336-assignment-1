@@ -2,7 +2,7 @@ import torch
 from torch.nn import Module, init, Parameter
 from einops import einsum, reduce, rearrange, repeat
 from math import sqrt, log
-from jaxtyping import Float, Int
+from jaxtyping import Float, Int, Bool
 from torch import Tensor
 
 
@@ -114,3 +114,16 @@ class RotaryPositionalEmbedding(Module):
 def softmax(x: Float[Tensor, "..."], dim: int) -> Float[Tensor, "..."]:
     exp_x = torch.exp(x - torch.max(x, dim).values.unsqueeze(dim))
     return exp_x / torch.sum(exp_x, dim, keepdim=True)
+
+
+def scaled_dot_product_attention(
+    key: Float[Tensor, "batch_size ... seq_len d_k"],
+    value: Float[Tensor, "batch_size ... seq_len d_v"],
+    query: Float[Tensor, "batch_size ... seq_len d_k"],
+    mask: Bool[Tensor, "seq_len seq_len"] | None = None,
+) -> Float[Tensor, "batch_size ... d_v"]:
+    dot_product = einsum(query, key, "... s1 d_k, ... s2 d_k -> ... s1 s2") / sqrt(key.shape[-1])
+    if mask is not None:
+        dot_product[..., ~mask] = -torch.inf
+    attention_weights = softmax(dot_product, -1)
+    return einsum(attention_weights, value, "b ... s1 s2, b ... s2 d_v -> b ... s1 d_v")
