@@ -89,7 +89,12 @@ def run_swiglu(
     # swiglu.w1.weight.data = w1_weight
     # swiglu.w2.weight.data = w2_weight
     # swiglu.w3.weight.data = w3_weight
-    raise NotImplementedError
+    from cs336_basics.transformer_modules import SwiGLU
+    ffn = SwiGLU(d_model, d_ff)
+    ffn.W1.W.data = w1_weight
+    ffn.W2.W.data = w2_weight
+    ffn.W3.W.data = w3_weight
+    return ffn(in_features)
 
 
 def run_scaled_dot_product_attention(
@@ -401,7 +406,9 @@ def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
         Float[Tensor,"..."]: of with the same shape as `in_features` with the output of applying
         SiLU to each element.
     """
-    raise NotImplementedError
+    from cs336_basics.transformer_modules import SiLU
+    s = SiLU()
+    return s(in_features)
 
 
 def run_get_batch(

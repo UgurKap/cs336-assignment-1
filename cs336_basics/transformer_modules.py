@@ -58,3 +58,25 @@ class RMSNorm(Module):
         x = x.to(torch.float32)
         result = (x / torch.sqrt(reduce(x * x, "... d_model -> ... 1", "mean") + self.eps)) * self.g
         return result.to(in_dtype)
+
+
+class SiLU(Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x: Float[Tensor, "... in_features"]) -> Float[Tensor, "... in_features"]:
+        return x * torch.sigmoid(x)
+
+
+class SwiGLU(Module):
+    def __init__(self, d_model: int, d_ff: int):
+        super().__init__()
+        self.silu = SiLU()
+        self.W1 = Linear(in_features=d_model, out_features=d_ff)
+        self.W2 = Linear(in_features=d_ff, out_features=d_model)
+        self.W3 = Linear(in_features=d_model, out_features=d_ff)
+
+    def forward(self, x: Float[Tensor, "... d_model"]) -> Float[Tensor, "... d_model"]:
+        op1 = self.silu(self.W1(x))
+        op2 = self.W3(x)
+        return self.W2(op1 * op2)
