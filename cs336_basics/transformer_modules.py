@@ -156,7 +156,12 @@ class MultiHeadSelfAttention(Module):
 
 class MultiHeadSelfAttentionRoPE(Module):
     def __init__(
-        self, d_model: int, num_heads: int, max_seq_len: int, theta: float = 10000, device: torch.device | None = None
+        self,
+        d_model: int,
+        num_heads: int,
+        max_seq_len: int = 1024,
+        theta: float = 10_000,
+        device: torch.device | None = None,
     ):
         super().__init__()
         self.register_buffer(
@@ -171,7 +176,7 @@ class MultiHeadSelfAttentionRoPE(Module):
         self.output_projection = Linear(num_heads * d_v, d_model, device=device)
 
     def forward(
-        self, x: Float[Tensor, "... seq_len d_model"], pos_vector: Int[Tensor, "... seq_len"] | None
+        self, x: Float[Tensor, "... seq_len d_model"], pos_vector: Int[Tensor, "... seq_len"] | None = None
     ) -> Float[Tensor, "... seq_len d_model"]:
         seq_len = x.shape[-2]
         if pos_vector is None:
@@ -184,3 +189,17 @@ class MultiHeadSelfAttentionRoPE(Module):
             "batch head seq_len d_v -> batch seq_len (head d_v)",
         )
         return self.output_projection(out)
+
+
+class TransformerBlock(Module):
+    def __init__(self, d_model: int, num_heads: int, d_ff: int, max_seq_len: int = 1024, theta: float = 10_000):
+        super().__init__()
+        self.rms1 = RMSNorm(d_model)
+        self.rms2 = RMSNorm(d_model)
+        self.mha = MultiHeadSelfAttentionRoPE(d_model, num_heads, max_seq_len, theta)
+        self.ff = SwiGLU(d_model, d_ff)
+
+    def forward(self, x: Float[Tensor, "..."]) -> Float[Tensor, "..."]:
+        out1 = x + self.mha(self.rms1(x))
+        out2 = out1 + self.ff(self.rms2(out1))
+        return out2
