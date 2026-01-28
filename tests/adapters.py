@@ -397,7 +397,32 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
     """
-    raise NotImplementedError
+    from cs336_basics.transformer_modules import TransformerLM
+    lm = TransformerLM(
+        vocab_size=vocab_size,
+        context_length=context_length,
+        d_model=d_model,
+        num_layers=num_layers,
+        num_heads=num_heads,
+        d_ff = d_ff,
+        rope_theta=rope_theta
+    )
+
+    lm.token_embeddings.embeddings.data = weights["token_embeddings.weight"]
+    for i in range(num_layers):
+        lm.transformer_blocks[i].rms1.g.data = weights[f"layers.{i}.ln1.weight"]
+        lm.transformer_blocks[i].rms2.g.data = weights[f"layers.{i}.ln2.weight"]
+        lm.transformer_blocks[i].ff.W1.W.data = weights[f"layers.{i}.ffn.w1.weight"]
+        lm.transformer_blocks[i].ff.W2.W.data = weights[f"layers.{i}.ffn.w2.weight"]
+        lm.transformer_blocks[i].ff.W3.W.data = weights[f"layers.{i}.ffn.w3.weight"]
+        lm.transformer_blocks[i].mha.W_q.W.data = weights[f"layers.{i}.attn.q_proj.weight"]
+        lm.transformer_blocks[i].mha.W_k.W.data = weights[f"layers.{i}.attn.k_proj.weight"]
+        lm.transformer_blocks[i].mha.W_v.W.data = weights[f"layers.{i}.attn.v_proj.weight"]
+        lm.transformer_blocks[i].mha.output_projection.W.data = weights[f"layers.{i}.attn.output_proj.weight"]
+    lm.rms.g.data = weights["ln_final.weight"]
+    lm.out_proj.W.data = weights["lm_head.weight"]
+    return lm(in_indices)
+
 
 
 def run_rmsnorm(

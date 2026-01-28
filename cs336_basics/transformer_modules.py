@@ -1,5 +1,5 @@
 import torch
-from torch.nn import Module, init, Parameter
+from torch.nn import Module, init, Parameter, Sequential
 from einops import einsum, reduce, rearrange, repeat
 from math import sqrt, log
 from jaxtyping import Float, Int, Bool
@@ -199,7 +199,33 @@ class TransformerBlock(Module):
         self.mha = MultiHeadSelfAttentionRoPE(d_model, num_heads, max_seq_len, theta)
         self.ff = SwiGLU(d_model, d_ff)
 
-    def forward(self, x: Float[Tensor, "..."]) -> Float[Tensor, "..."]:
+    def forward(self, x: Float[Tensor, "... seq_len d_model"]) -> Float[Tensor, "... seq_len d_model"]:
         out1 = x + self.mha(self.rms1(x))
         out2 = out1 + self.ff(self.rms2(out1))
         return out2
+
+
+class TransformerLM(Module):
+    def __init__(
+        self,
+        vocab_size: int,
+        context_length: int,
+        d_model: int,
+        num_layers: int,
+        num_heads: int,
+        d_ff: int,
+        rope_theta: int,
+    ):
+        super().__init__()
+        self.token_embeddings = Embedding(num_embeddings=vocab_size, embedding_dim=d_model)
+        self.transformer_blocks = Sequential(
+            *[
+                TransformerBlock(d_model, num_heads, d_ff, max_seq_len=context_length, theta=rope_theta)
+                for _ in range(num_layers)
+            ]
+        )
+        self.rms = RMSNorm(d_model)
+        self.out_proj = Linear(d_model, vocab_size)
+
+    def forward(self, x: Int[Tensor, "batch seq_len"]) -> Float[Tensor, "batch seq_len vocab_size"]:
+        return self.out_proj(self.rms(self.transformer_blocks(self.token_embeddings(x))))
