@@ -121,9 +121,66 @@ def scaled_dot_product_attention(
     value: Float[Tensor, "batch_size ... seq_len d_v"],
     query: Float[Tensor, "batch_size ... seq_len d_k"],
     mask: Bool[Tensor, "seq_len seq_len"] | None = None,
-) -> Float[Tensor, "batch_size ... d_v"]:
+) -> Float[Tensor, "batch_size ... seq_len d_v"]:
     dot_product = einsum(query, key, "... s1 d_k, ... s2 d_k -> ... s1 s2") / sqrt(key.shape[-1])
     if mask is not None:
         dot_product[..., ~mask] = -torch.inf
     attention_weights = softmax(dot_product, -1)
     return einsum(attention_weights, value, "b ... s1 s2, b ... s2 d_v -> b ... s1 d_v")
+
+
+class MultiHeadSelfAttention(Module):
+    def __init__(self, d_model: int, num_heads: int, max_seq_len: int = 1024, device: torch.device | None = None):
+        super().__init__()
+        self.register_buffer(
+            "mask", torch.tril(torch.ones(max_seq_len, max_seq_len, dtype=torch.bool, device=device)), persistent=False
+        )
+        d_k = d_v = d_model // num_heads
+        self.num_heads = num_heads
+        self.W_q = Linear(d_model, num_heads * d_k, device=device)
+        self.W_k = Linear(d_model, num_heads * d_k, device=device)
+        self.W_v = Linear(d_model, num_heads * d_v, device=device)
+        self.output_projection = Linear(num_heads * d_v, d_model, device=device)
+
+    def forward(self, x: Float[Tensor, "... seq_len d_model"]) -> Float[Tensor, "... seq_len d_model"]:
+        seq_len = x.shape[-2]
+        k = rearrange(self.W_k(x), "b s (h d) -> b h s d", h=self.num_heads)
+        q = rearrange(self.W_q(x), "b s (h d) -> b h s d", h=self.num_heads)
+        v = rearrange(self.W_v(x), "b s (h d) -> b h s d", h=self.num_heads)
+        out = rearrange(
+            scaled_dot_product_attention(key=k, query=q, value=v, mask=self.mask[:seq_len, :seq_len]),
+            "batch head seq_len d_v -> batch seq_len (head d_v)",
+        )
+        return self.output_projection(out)
+
+
+class MultiHeadSelfAttentionRoPE(Module):
+    def __init__(
+        self, d_model: int, num_heads: int, max_seq_len: int, theta: float = 10000, device: torch.device | None = None
+    ):
+        super().__init__()
+        self.register_buffer(
+            "mask", torch.tril(torch.ones(max_seq_len, max_seq_len, dtype=torch.bool, device=device)), persistent=False
+        )
+        d_k = d_v = d_model // num_heads
+        self.num_heads = num_heads
+        self.W_q = Linear(d_model, num_heads * d_k, device=device)
+        self.W_k = Linear(d_model, num_heads * d_k, device=device)
+        self.W_v = Linear(d_model, num_heads * d_v, device=device)
+        self.rope = RotaryPositionalEmbedding(theta=theta, d_k=d_k, max_seq_len=max_seq_len, device=device)
+        self.output_projection = Linear(num_heads * d_v, d_model, device=device)
+
+    def forward(
+        self, x: Float[Tensor, "... seq_len d_model"], pos_vector: Int[Tensor, "... seq_len"] | None
+    ) -> Float[Tensor, "... seq_len d_model"]:
+        seq_len = x.shape[-2]
+        if pos_vector is None:
+            pos_vector = torch.arange(0, seq_len, device=x.device)
+        k = self.rope(rearrange(self.W_k(x), "b s (h d) -> b h s d", h=self.num_heads), pos_vector)
+        q = self.rope(rearrange(self.W_q(x), "b s (h d) -> b h s d", h=self.num_heads), pos_vector)
+        v = rearrange(self.W_v(x), "b s (h d) -> b h s d", h=self.num_heads)
+        out = rearrange(
+            scaled_dot_product_attention(key=k, query=q, value=v, mask=self.mask[:seq_len, :seq_len]),
+            "batch head seq_len d_v -> batch seq_len (head d_v)",
+        )
+        return self.output_projection(out)
