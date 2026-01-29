@@ -75,7 +75,30 @@ will raise `UnicodeDecodeError: 'utf-8' codec can't decode byte 0xbf in position
 
 ## `transformer_accounting`
 
-1. ...  
+1. Consider GPT-2 XL, which has the following configuration:
+    vocab_size : 50,257  
+    context_length : 1,024  
+    num_layers : 48  
+    d_model : 1,600  
+    num_heads : 25  
+    d_ff : 6,400  
+    Suppose we constructed our model using this configuration. How many trainable parameters would our model have? Assuming each parameter is represented using single-precision floating point, how much memory is required to just load this model?  
+
+--> 
+- Embeddings: vocab_size x d_model
+- Transformer Layers: num_layers x
+    - RMSNorm(s): 2 x d_model
+    - Attention (assuming d_k x num_heads = d_model): 3 x d_model x d_model + d_model x d_model = 4 x d_model^2
+    - Feedforward: 3 x d_model x d_ff
+- Final RMSNorm: d_model
+- Output Projection: vocab_size x d_model
+
+
+Total Parameters to Load: (2 x vocab_size x d_model) + num_layers x (2 x d_model + 4 x d_model x d_model + 3 x d_model x d_ff) + d_model = 2127056000  
+
+Storing them in single precision means each parameter will need 4 bytes, hence this would take ~7.92 GiB or ~8.51 GB.
+
+
 2. Identify the matrix multiplies required to complete a forward pass of our GPT-2 XL-shaped model. How many FLOPs do these matrix multiplies require in total? Assume that our input sequence has context_length tokens.  
 
 --> Calculation:  
@@ -136,4 +159,76 @@ Then:
 3.  Based on your analysis above, which parts of the model require the most FLOPs?  
 --> Most FLOPs are required for the dot product between keys and queries in the attention. Weighted sum of attention can also be costly depending on if context length is significant compared to the model dimension. One interesting factor we can notice here is that we didn't actually need to assume n_heads x d_k was equal to d_model but we just assumed by convention. So, one can play around with the number of heads. And in the SwiGLU case, feedforward network is also spending a lot of FLOPs. Output projection also takes a lot of FLOPs relative to what it is doing, and scales by the size of the vocabulary.  
 
-4. 
+4. Repeat the analysis for GPT-2 Small, Medium and Large. As the model size increases, which part of the model take proportionally more or less of total FLOPs?  
+-->
+```
+================================================ GPT-2 Small ================================================
+
+Total FLOPs: 3.50E+11
+Output Projection FLOPs: 7.90E+10 | Relative Contribution to the total FLOPs: 22.61%
+Transformer Blocks FLOPs: 2.705829E+11 | Relative Contribution to the total FLOPs: 77.39%
+
+=====
+
+Single Transformer Block FLOPs: 2.25E+10
+Attention FLOPs: 8.05E+09 | Relative Contribution to the transformer block FLOPs: 35.71%
+Feedforward FLOPs: 1.45E+10 | Relative Contribution to the transformer block FLOPs: 64.29%
+
+
+================================================ GPT-2 Medium ================================================
+
+Total FLOPs: 1.03E+12
+Output Projection FLOPs: 1.05E+11 | Relative Contribution to the total FLOPs: 10.20%
+Transformer Blocks FLOPs: 9.277129E+11 | Relative Contribution to the total FLOPs: 89.80%
+
+=====
+
+Single Transformer Block FLOPs: 3.87E+10
+Attention FLOPs: 1.29E+10 | Relative Contribution to the transformer block FLOPs: 33.33%
+Feedforward FLOPs: 2.58E+10 | Relative Contribution to the transformer block FLOPs: 66.67%
+
+
+================================================ GPT-2 Large ================================================
+
+Total FLOPs: 2.26E+12
+Output Projection FLOPs: 1.32E+11 | Relative Contribution to the total FLOPs: 5.84%
+Transformer Blocks FLOPs: 2.126009E+12 | Relative Contribution to the total FLOPs: 94.16%
+
+=====
+
+Single Transformer Block FLOPs: 5.91E+10
+Attention FLOPs: 1.88E+10 | Relative Contribution to the transformer block FLOPs: 31.82%
+Feedforward FLOPs: 4.03E+10 | Relative Contribution to the transformer block FLOPs: 68.18%
+
+
+================================================ GPT-2 XL ================================================
+
+Total FLOPs: 4.51E+12
+Output Projection FLOPs: 1.65E+11 | Relative Contribution to the total FLOPs: 3.65%
+Transformer Blocks FLOPs: 4.348654E+12 | Relative Contribution to the total FLOPs: 96.35%
+
+=====
+
+Single Transformer Block FLOPs: 9.06E+10
+Attention FLOPs: 2.77E+10 | Relative Contribution to the transformer block FLOPs: 30.56%
+Feedforward FLOPs: 6.29E+10 | Relative Contribution to the transformer block FLOPs: 69.44%
+```
+(Code can be found under cs336_basics/flops_calculator.py)  
+
+As the model size increases, FLOPs contribution of the output projection layer gets smaller and smaller. Additionally, inside the transformer block itself we see proportional contribution of the attention layers getting slightly smaller as well while contribution of the feedforward components increase, as well as the contribution of the transformer blocks to the total model FLOPs.  
+
+5. Increase context length of the GPT-2 XL to 16384. How do the relative contributions change?  
+--> When we increase the context length, this is what we observe:
+```
+Total FLOPs: 1.50E+14
+Output Projection FLOPs: 2.63E+12 | Relative Contribution to the total FLOPs: 1.76%
+Transformer Blocks FLOPs: 1.468879E+14 | Relative Contribution to the total FLOPs: 98.24%
+
+=====
+
+Single Transformer Block FLOPs: 3.06E+12
+Attention FLOPs: 2.05E+12 | Relative Contribution to the transformer block FLOPs: 67.11%
+Feedforward FLOPs: 1.01E+12 | Relative Contribution to the transformer block FLOPs: 32.89%
+```
+
+Attention blocks start to dominate (compared to before when feedforwards were dominating).  
