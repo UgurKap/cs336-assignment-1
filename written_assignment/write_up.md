@@ -232,3 +232,9 @@ Feedforward FLOPs: 1.01E+12 | Relative Contribution to the transformer block FLO
 ```
 
 Attention blocks start to dominate (compared to before when feedforwards were dominating).  
+
+## 4.2 `learning_rate_tuning`
+
+1.  Run the SGD example above with three other values for the learning rate: 1e1, 1e2, and 1e3, for just 10 training iterations. What happens with the loss for each
+of these learning rates? Does it decay faster, slower, or does it diverge (i.e., increase over the course of training)?  
+--> For learning rates 1e1 and 1e2, loss decays faster in a correlated manner with the magnitude of the learning rate. For 1e3, loss diverges.  
