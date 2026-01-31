@@ -110,3 +110,12 @@ def lr_cosine_schedule_sine_warmup(
         )
     else:
         return min_lr
+
+
+def gradient_clipping(params: ParamsT, max_norm: float, eps: float = 1e-6):
+    norms = torch.tensor([torch.norm(p.grad) for p in params if p.grad is not None])
+    total_norm = torch.norm(norms)
+    if total_norm > max_norm:
+        for p in params:
+            if p.grad is not None:
+                p.grad *= max_norm / (total_norm + eps)
