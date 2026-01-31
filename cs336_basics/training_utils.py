@@ -1,6 +1,6 @@
 import torch
 from torch.optim import Optimizer
-from math import sqrt
+from math import sqrt, cos, pi, sin
 from jaxtyping import Float, Int
 from torch import Tensor
 from collections.abc import Callable, Iterable
@@ -84,3 +84,29 @@ class AdamW(Optimizer):
                 state["m"] = m
                 state["v"] = v
         return loss
+
+
+def lr_cosine_schedule(step: int, max_lr: float, min_lr: float, warmup_steps: int, cosine_cycle_steps: int) -> float:
+    if step < warmup_steps:
+        return (step / warmup_steps) * max_lr
+    elif step <= cosine_cycle_steps:
+        return (
+            min_lr
+            + ((1 + cos(pi * (step - warmup_steps) / (cosine_cycle_steps - warmup_steps))) * (max_lr - min_lr)) / 2
+        )
+    else:
+        return min_lr
+
+
+def lr_cosine_schedule_sine_warmup(
+    step: int, max_lr: float, min_lr: float, warmup_steps: int, cosine_cycle_steps: int
+) -> float:
+    if step < warmup_steps:
+        return sin(pi / 2 * (step / warmup_steps)) * max_lr
+    elif step <= cosine_cycle_steps:
+        return (
+            min_lr
+            + ((1 + cos(pi * (step - warmup_steps) / (cosine_cycle_steps - warmup_steps))) * (max_lr - min_lr)) / 2
+        )
+    else:
+        return min_lr
