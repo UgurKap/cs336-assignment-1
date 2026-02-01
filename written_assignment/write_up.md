@@ -348,17 +348,79 @@ Summing for feedforward: bs + bsd + bsd + bsd_ff + bsd_ff + bsd = bs + 3bsd + 2b
 - **Optimizer State Memory Usage:** 4vd + 2n(2d + 4d² + 2dd_ff) + 2d
 - **Whole model:** 8vd + 4n(2d + 4d² + 2dd_ff) + 4d + n(2bs + 10bsd + 2bs²h + 2bsd_ff) + bs + bsd + 2bsv
 
-**2.  Instantiate your answer for a GPT-2 XL-shaped model to get an expression that only depends on the batch_size. What is the maximum batch size you can use and still fit within 80GB memory? (Assuming fp32)**
+**2. Instantiate your answer for a GPT-2 XL-shaped model to get an expression that only depends on the batch_size. What is the maximum batch size you can use and still fit within 80GB memory? (Assuming fp32)**
 
-643,289,600 + 5,898,854,400 + 6400 + 48b(2048 + 16,384,000 + 52,428,800 + 13,107,200) + b (1024 + 1,638,400 + 102,926,336)
-= 6,542,150,400 + b (4,036,824,064)
+Substituting GPT-2 XL parameters:
 
-Assuming fp32, this model would use 26.17 + 16.15xbatch_size GB memory. So, maximum batch size that would fit in 80 GBs would be 3, which is floor((80-26.17)/16.15).
+```
+643,289,600 + 5,898,854,400 + 6400 + 48b(2048 + 16,384,000 + 52,428,800 + 13,107,200) + b(1024 + 1,638,400 + 102,926,336)
+= 6,542,150,400 + b(4,036,824,064)
+```
+
+Assuming fp32, this model would use **26.17 + 16.15 x batch_size GB** memory.
+
+Maximum batch size that would fit in 80 GB: **3** (calculated as floor((80 - 26.17) / 16.15))
 
 **3. How many FLOPs does running one step of AdamW take?**
 
-...
+Breaking down the AdamW update step (where P = number of parameters):
+
+**First moment vector calculation:**
+- Scale parameters by scalar: P
+- Scale gradients: P
+- Sum the two: P
+- Total: 3P FLOPs
+
+**Second moment vector calculation:**
+- Square gradients (elementwise): P
+- Scale by scalar: P
+- Scale second moment: P
+- Sum: P
+- Total: 4P FLOPs
+
+**Parameter update:**
+- Square root of second moment: P
+- Add epsilon: P
+- Divide first moment by (sqrt(second moment) + epsilon): P
+- Multiply by learning rate: P
+- Subtract from parameters: P
+- Total: 5P FLOPs
+
+**Weight decay:**
+- Elementwise multiplication: P
+- Subtraction: P
+- Total: 2P FLOPs
+
+**Total: 3P + 4P + 5P + 2P = 14P FLOPs** (where P is the number of parameters)
 
 **4. An NVIDIA A100 GPU has a theoretical peak of 19.5 teraFLOP/s for float32 operations. Assuming you are able to get 50% MFU, how long would it take to train a GPT-2 XL for 400K steps and a batch size of 1024 on a single A100?**
 
-...
+Following Kaplan et al., whose analyses were made on GPT-2 like architectures, we can assume 1 forward + backward pass will take **6PBS FLOPs**, where:
+- Forward pass: 2PBS
+- Backward pass: 4PBS
+- P = Number of parameters
+- B = Batch size
+- S = Sequence length
+
+**GPT-2 XL parameter count:**
+
+```
+(2 x vocab_size x d_model) + num_layers x (2 x d_model + 4 x d_model x d_model + 2 x d_model x d_ff) + d_model
+= (160,822,400 + 1,474,713,600 + 1,600)
+= 1,635,537,600 parameters
+```
+
+**FLOPs per step (batch size 1024):**
+
+```
+6 x 1,635,537,600 x 1024 x 1024 = 10,289,912,846,745,600 FLOPs
+≈ 10,290 teraFLOPs
+```
+
+**Training time:**
+
+- A100 theoretical peak: 19.5 teraFLOP/s
+- With 50% MFU: 9.75 teraFLOP/s
+- Time per step: 10,290 / 9.75 ≈ 1,055 seconds
+- Total for 400K steps: 422,153,846 seconds
+- **≈ 13 years and 4.5 months**
