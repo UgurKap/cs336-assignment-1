@@ -5,6 +5,8 @@ from jaxtyping import Float, Int
 from torch import Tensor
 from collections.abc import Callable, Iterable
 from typing import Any, TypeAlias
+import numpy as np
+from numpy.typing import NDArray
 
 ParamsT: TypeAlias = (
     Iterable[Float[Tensor, "..."]] | Iterable[dict[str, Any]] | Iterable[tuple[str, Float[Tensor, "..."]]]
@@ -119,3 +121,16 @@ def gradient_clipping(params: ParamsT, max_norm: float, eps: float = 1e-6):
         for p in params:
             if p.grad is not None:
                 p.grad *= max_norm / (total_norm + eps)
+
+
+def get_batch(
+    x: Int[NDArray, " "], batch_size: int, context_length: int, device: str
+) -> tuple[Int[Tensor, " batch context"], Int[Tensor, " batch context"]]:
+    rng = np.random.default_rng()
+    indices = rng.integers(low=0, high=x.shape[-1] - context_length, size=batch_size)
+    batch = torch.tensor(
+        np.stack([x[start_ind : start_ind + context_length + 1] for start_ind in indices]),
+        dtype=torch.int16,
+        device=device,
+    )
+    return batch[..., 0:context_length], batch[..., 1 : context_length + 1]
