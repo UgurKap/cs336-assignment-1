@@ -124,9 +124,9 @@ def gradient_clipping(params: ParamsT, max_norm: float, eps: float = 1e-6):
 
 
 def get_batch(
-    x: Int[NDArray, " "], batch_size: int, context_length: int, device: str
+    x: Int[NDArray, " "], batch_size: int, context_length: int, device: str, seed: None | int = None
 ) -> tuple[Int[Tensor, " batch context"], Int[Tensor, " batch context"]]:
-    rng = np.random.default_rng()
+    rng = np.random.default_rng(seed)
     indices = rng.integers(low=0, high=x.shape[-1] - context_length, size=batch_size)
     batch = torch.tensor(
         np.stack([x[start_ind : start_ind + context_length + 1] for start_ind in indices]),
