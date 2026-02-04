@@ -132,7 +132,7 @@ def get_batch(
     indices = rng.integers(low=0, high=x.shape[-1] - context_length, size=batch_size)
     batch = torch.tensor(
         np.stack([x[start_ind : start_ind + context_length + 1] for start_ind in indices]),
-        dtype=torch.int16,
+        dtype=torch.long,
         device=device,
     )
     return batch[..., 0:context_length], batch[..., 1 : context_length + 1]
