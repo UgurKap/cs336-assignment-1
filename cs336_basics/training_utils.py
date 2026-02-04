@@ -1,3 +1,4 @@
+import typing
 import torch
 from torch.optim import Optimizer
 from math import sqrt, cos, pi, sin
@@ -7,6 +8,7 @@ from collections.abc import Callable, Iterable
 from typing import Any, TypeAlias
 import numpy as np
 from numpy.typing import NDArray
+import os
 
 ParamsT: TypeAlias = (
     Iterable[Float[Tensor, "..."]] | Iterable[dict[str, Any]] | Iterable[tuple[str, Float[Tensor, "..."]]]
@@ -134,3 +136,23 @@ def get_batch(
         device=device,
     )
     return batch[..., 0:context_length], batch[..., 1 : context_length + 1]
+
+
+def save_checkpoint(
+    model: torch.nn.Module,
+    optimizer: Optimizer,
+    iteration: int,
+    out: str | os.PathLike | typing.BinaryIO | typing.IO[bytes],
+):
+    obj = {"model_state": model.state_dict(), "optimizer_state": optimizer.state_dict(), "iteration": iteration}
+    torch.save(obj, out)
+
+
+def load_checkpoint(
+    src: str | os.PathLike | typing.BinaryIO | typing.IO[bytes], model: torch.nn.Module, optimizer: Optimizer
+) -> int:
+    obj = torch.load(src)
+    model.load_state_dict(obj["model_state"])
+    optimizer.load_state_dict(obj["optimizer_state"])
+    return obj["iteration"]
+
