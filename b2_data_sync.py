@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
-Backblaze B2 sync script for managing data files across devices.
+Backblaze B2 sync script for managing data files and model checkpoints across devices.
 
 Usage:
     python b2_data_sync.py download                        # Download all files from B2 to data/
     python b2_data_sync.py upload <file1> <file2> ...     # Upload specific files to B2
     python b2_data_sync.py upload data/*                   # Upload all files in data/
     python b2_data_sync.py list                            # List files in the bucket
+    python b2_data_sync.py upload-model <dir_uuid>        # Upload model directory to B2
+    python b2_data_sync.py get-model <dir_uuid>           # Download model directory from B2
 """
 
 import argparse
@@ -150,18 +152,107 @@ class B2Sync:
             total_gb = total_size / (1024 * 1024 * 1024)
             print(f"\nTotal: {file_count} file(s), {total_gb:.2f} GB")
 
+    def upload_model(self, dir_uuid: str):
+        """Upload a model directory to B2."""
+        models_dir = self.project_root / "models"
+        model_dir = models_dir / dir_uuid
+
+        if not model_dir.exists():
+            print(f"Error: Model directory not found: {model_dir}")
+            sys.exit(1)
+
+        if not model_dir.is_dir():
+            print(f"Error: Not a directory: {model_dir}")
+            sys.exit(1)
+
+        # Get all files in the model directory
+        files = list(model_dir.glob("*"))
+        files = [f for f in files if f.is_file()]
+
+        if not files:
+            print(f"No files found in {model_dir}")
+            return
+
+        print(f"Uploading model directory '{dir_uuid}' ({len(files)} file(s))...")
+
+        for file_path in tqdm(files, desc="Uploading"):
+            # Upload with models/dir_uuid/ prefix to preserve directory structure
+            b2_file_name = f"models/{dir_uuid}/{file_path.name}"
+
+            try:
+                self.bucket.upload_local_file(local_file=str(file_path), file_name=b2_file_name)
+                size_mb = file_path.stat().st_size / (1024 * 1024)
+                tqdm.write(f"Uploaded: {b2_file_name} ({size_mb:.2f} MB)")
+            except Exception as e:
+                tqdm.write(f"Failed to upload {file_path}: {e}")
+
+        print("\nModel upload complete")
+
+    def get_model(self, dir_uuid: str):
+        """Download a model directory from B2."""
+        print(f"Fetching model directory '{dir_uuid}' from B2...")
+
+        # List all files with the models/dir_uuid/ prefix
+        prefix = f"models/{dir_uuid}/"
+        files_in_bucket = []
+
+        for file_version_info, _ in self.bucket.ls():
+            if file_version_info.file_name.startswith(prefix):
+                files_in_bucket.append(file_version_info)
+
+        if not files_in_bucket:
+            print(f"No files found in B2 with prefix '{prefix}'")
+            return
+
+        print(f"Found {len(files_in_bucket)} file(s) for model '{dir_uuid}'")
+
+        # Create model directory if it doesn't exist
+        models_dir = self.project_root / "models"
+        model_dir = models_dir / dir_uuid
+        model_dir.mkdir(parents=True, exist_ok=True)
+
+        for file_version_info in tqdm(files_in_bucket, desc="Downloading"):
+            b2_file_name = file_version_info.file_name
+            # Extract just the filename (remove models/dir_uuid/ prefix)
+            filename = b2_file_name.replace(prefix, "")
+            local_path = model_dir / filename
+
+            # Validate path to prevent directory traversal attacks
+            try:
+                resolved_path = local_path.resolve()
+                model_dir_resolved = model_dir.resolve()
+                if not resolved_path.is_relative_to(model_dir_resolved):
+                    tqdm.write(f"Skipping {b2_file_name}: path traversal attempt detected")
+                    continue
+            except (ValueError, OSError) as e:
+                tqdm.write(f"Skipping {b2_file_name}: invalid path ({e})")
+                continue
+
+            # Download file
+            try:
+                downloaded_file = self.bucket.download_file_by_name(b2_file_name)
+                downloaded_file.save_to(str(local_path))
+                size_mb = file_version_info.size / (1024 * 1024)
+                tqdm.write(f"Downloaded: {filename} ({size_mb:.2f} MB)")
+            except Exception as e:
+                tqdm.write(f"Failed to download {b2_file_name}: {e}")
+
+        print("\nModel download complete")
+
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Sync data files with Backblaze B2",
+        description="Sync data files and model checkpoints with Backblaze B2",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python b2_data_sync.py download                     # Download all files from B2 to data/
-  python b2_data_sync.py upload data/owt_train.txt    # Upload a specific file
-  python b2_data_sync.py upload data/*.npy            # Upload all .npy files in data/
-  python b2_data_sync.py upload *.pickle data/*.txt   # Upload multiple patterns
-  python b2_data_sync.py list                         # List files in bucket
+  python b2_data_sync.py download                               # Download all files from B2 to data/
+  python b2_data_sync.py upload data/owt_train.txt              # Upload a specific file
+  python b2_data_sync.py upload data/*.npy                      # Upload all .npy files in data/
+  python b2_data_sync.py upload *.pickle data/*.txt             # Upload multiple patterns
+  python b2_data_sync.py list                                   # List files in bucket
+  python b2_data_sync.py upload-model 9d388728-c441-4e93-9d61   # Upload model directory to B2
+  python b2_data_sync.py get-model 9d388728-c441-4e93-9d61      # Download model directory from B2
 
 Setup:
   1. Install dependencies: uv sync
@@ -172,10 +263,16 @@ Setup:
         """,
     )
 
-    parser.add_argument("command", choices=["download", "upload", "list"], help="Command to execute")
+    parser.add_argument(
+        "command",
+        choices=["download", "upload", "list", "upload-model", "get-model"],
+        help="Command to execute",
+    )
 
     parser.add_argument(
-        "files", nargs="*", help="Files to upload (required for upload command, supports glob patterns)"
+        "files",
+        nargs="*",
+        help="Files to upload (for upload), or directory UUID (for upload-model/get-model)",
     )
 
     args = parser.parse_args()
@@ -183,6 +280,11 @@ Setup:
     # Validate that download/list commands don't have extra arguments
     if args.command in ["download", "list"] and args.files:
         parser.error(f"{args.command} command does not accept file arguments")
+
+    # Validate that upload-model/get-model have exactly one argument
+    if args.command in ["upload-model", "get-model"]:
+        if len(args.files) != 1:
+            parser.error(f"{args.command} command requires exactly one directory UUID argument")
 
     try:
         sync = B2Sync()
@@ -193,6 +295,10 @@ Setup:
             sync.upload(args.files)
         elif args.command == "list":
             sync.list_files()
+        elif args.command == "upload-model":
+            sync.upload_model(args.files[0])
+        elif args.command == "get-model":
+            sync.get_model(args.files[0])
 
     except KeyboardInterrupt:
         print("\n\nOperation cancelled by user")

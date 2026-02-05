@@ -71,7 +71,8 @@ def train(cfg):
     precision = cfg.get("precision", "fp32")
     dtype = torch.bfloat16 if precision == "bf16" else torch.float16 if precision == "fp16" else torch.float32
 
-    run = wandb.init(project="llm-from-scratch", config=cfg, mode="disabled" if is_smoke_test else "online")
+    cfg_with_uuid = {**cfg, "model_uuid": run_id}
+    run = wandb.init(project="llm-from-scratch", config=cfg_with_uuid, mode="disabled" if is_smoke_test else "online")
 
     if is_smoke_test:
         smoke_inputs, smoke_targets = training_utils.get_batch(train_data, batch_size, context_length, device, seed=0)
