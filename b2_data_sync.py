@@ -91,7 +91,7 @@ class B2Sync:
         print("Fetching file list from B2...")
 
         # List all files in bucket
-        files_in_bucket = list(self.bucket.ls())
+        files_in_bucket = list(self.bucket.ls(recursive=True, fetch_count=10000))
 
         if not files_in_bucket:
             print("No files found in bucket")
@@ -140,7 +140,7 @@ class B2Sync:
         total_size = 0
         file_count = 0
 
-        for file_version_info, _ in self.bucket.ls():
+        for file_version_info, _ in self.bucket.ls(recursive=True, fetch_count=10000):
             size_mb = file_version_info.size / (1024 * 1024)
             total_size += file_version_info.size
             file_count += 1
@@ -196,7 +196,7 @@ class B2Sync:
         prefix = f"models/{dir_uuid}/"
         files_in_bucket = []
 
-        for file_version_info, _ in self.bucket.ls():
+        for file_version_info, _ in self.bucket.ls(recursive=True, fetch_count=10000):
             if file_version_info.file_name.startswith(prefix):
                 files_in_bucket.append(file_version_info)
 
