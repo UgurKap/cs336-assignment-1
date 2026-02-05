@@ -163,3 +163,7 @@ cython_debug/
 *.zip
 data/
 models/
+wandb/
+.vscode/
+scratch.py
+scalene-profile*
