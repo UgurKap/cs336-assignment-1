@@ -162,3 +162,8 @@ cython_debug/
 .ruff_cache/
 *.zip
 data/
+models/
+wandb/
+.vscode/
+scratch.py
+scalene-profile*

@@ -1,3 +1,4 @@
+import typing
 import torch
 from torch.optim import Optimizer
 from math import sqrt, cos, pi, sin
@@ -5,6 +6,9 @@ from jaxtyping import Float, Int
 from torch import Tensor
 from collections.abc import Callable, Iterable
 from typing import Any, TypeAlias
+import numpy as np
+from numpy.typing import NDArray
+import os
 
 ParamsT: TypeAlias = (
     Iterable[Float[Tensor, "..."]] | Iterable[dict[str, Any]] | Iterable[tuple[str, Float[Tensor, "..."]]]
@@ -119,3 +123,36 @@ def gradient_clipping(params: ParamsT, max_norm: float, eps: float = 1e-6):
         for p in params:
             if p.grad is not None:
                 p.grad *= max_norm / (total_norm + eps)
+
+
+def get_batch(
+    x: Int[NDArray, " "], batch_size: int, context_length: int, device: str, seed: None | int = None
+) -> tuple[Int[Tensor, " batch context"], Int[Tensor, " batch context"]]:
+    rng = np.random.default_rng(seed)
+    indices = rng.integers(low=0, high=x.shape[-1] - context_length, size=batch_size)
+    batch = torch.tensor(
+        np.stack([x[start_ind : start_ind + context_length + 1] for start_ind in indices]),
+        dtype=torch.long,
+        device=device,
+    )
+    return batch[..., 0:context_length], batch[..., 1 : context_length + 1]
+
+
+def save_checkpoint(
+    model: torch.nn.Module,
+    optimizer: Optimizer,
+    iteration: int,
+    out: str | os.PathLike | typing.BinaryIO | typing.IO[bytes],
+):
+    obj = {"model_state": model.state_dict(), "optimizer_state": optimizer.state_dict(), "iteration": iteration}
+    torch.save(obj, out)
+
+
+def load_checkpoint(
+    src: str | os.PathLike | typing.BinaryIO | typing.IO[bytes], model: torch.nn.Module, optimizer: Optimizer
+) -> int:
+    obj = torch.load(src)
+    model.load_state_dict(obj["model_state"])
+    optimizer.load_state_dict(obj["optimizer_state"])
+    return obj["iteration"]
+
