@@ -22,10 +22,13 @@ lr_schedules = {
 def log_gradients(model, step):
     for name, param in model.named_parameters():
         if param.grad is not None:
-            wandb.log({
-                f"gradients/{name}.norm": param.grad.norm().item(),
-                f"gradients/{name}.mean": param.grad.mean().item()
-            }, step=step)
+            wandb.log(
+                {
+                    f"gradients/{name}.norm": param.grad.norm().item(),
+                    f"gradients/{name}.mean": param.grad.mean().item(),
+                },
+                step=step,
+            )
 
 
 def train(cfg):
@@ -112,7 +115,7 @@ def train(cfg):
 
         wandb.log({"train/loss": loss.item(), "train/lr": optimizer.param_groups[0]["lr"]}, step=step)
 
-        if step % eval_steps == 0:
+        if (step % eval_steps == 0) or (step == iterations - 1):
             model.eval()
             with torch.no_grad():
                 if is_smoke_test:
