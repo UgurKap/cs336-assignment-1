@@ -6,6 +6,8 @@ import sys
 import json
 import torch
 import numpy as np
+import uuid
+import shutil
 
 load_dotenv()
 
@@ -17,6 +19,15 @@ lr_schedules = {
 }
 
 
+def log_gradients(model, step):
+    for name, param in model.named_parameters():
+        if param.grad is not None:
+            wandb.log({
+                f"gradients/{name}.norm": param.grad.norm().item(),
+                f"gradients/{name}.mean": param.grad.mean().item()
+            }, step=step)
+
+
 def train(cfg):
     wandb.login()
     device = cfg.get("device", "cuda" if torch.cuda.is_available() else "cpu")
@@ -24,6 +35,7 @@ def train(cfg):
 
     model = models[cfg["model"]["type"]](**cfg["model"]["params"])
     model.to(device)
+    model = torch.compile(model)
 
     if "muon" not in (optimizer_name := cfg["optimizer"]["type"]):
         optimizer = optimizers[optimizer_name](model.parameters(), **cfg["optimizer"]["params"])
@@ -40,15 +52,21 @@ def train(cfg):
     batch_size = cfg["training"]["batch_size"]
     iterations = cfg["training"]["iterations"]
     eval_steps = cfg["training"]["eval_steps"]
+    grad_log_steps = cfg["training"]["grad_log_steps"]
 
+    run_id = str(uuid.uuid4())
     checkpoint_freq = cfg["checkpoints"].get("freq", None)
-    checkpoint_dir = Path(cfg["checkpoints"].get("save_dir", "models"))
+    checkpoint_dir = Path(cfg["checkpoints"].get("save_dir", "models")) / run_id
     checkpoint_dir.mkdir(exist_ok=True, parents=True)
 
     start_iter = 0
     if load_from := cfg["checkpoints"].get("load_from", None):
         start_iter = training_utils.load_checkpoint(load_from, model, optimizer)
         print(f"Loaded checkpoint from {load_from}, starting at iteration {start_iter}")
+
+    if len(sys.argv) > 1 and Path(sys.argv[-1]).exists():
+        shutil.copy(sys.argv[-1], checkpoint_dir / "config.json")
+        print(f"Copied config to {checkpoint_dir / 'config.json'}")
 
     precision = cfg.get("precision", "fp32")
     dtype = torch.bfloat16 if precision == "bf16" else torch.float16 if precision == "fp16" else torch.float32
@@ -82,6 +100,9 @@ def train(cfg):
 
         loss.backward()
 
+        if step % grad_log_steps == 0:
+            log_gradients(model, step)
+
         if gradient_clip_norm:
             training_utils.gradient_clipping(model.parameters(), **gradient_clip_norm)
 
@@ -103,6 +124,7 @@ def train(cfg):
                         val_logits.view(-1, val_logits.size(-1)), val_targets.reshape(-1)
                     )
                 wandb.log({"val/loss": val_loss.item()}, step=step)
+                wandb.log({"val/perplexity": torch.exp(val_loss).item()}, step=step)
                 print(
                     f"Step {step}: train_loss={loss.item():.4f}, val_loss={val_loss.item():.4f}, lr={optimizer.param_groups[0]['lr']:.6f}"
                 )
