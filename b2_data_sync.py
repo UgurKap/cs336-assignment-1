@@ -3,7 +3,7 @@
 Backblaze B2 sync script for managing data files and model checkpoints across devices.
 
 Usage:
-    python b2_data_sync.py download                        # Download all files from B2 to data/
+    python b2_data_sync.py download                        # Download data files from B2 to data/ (excludes models/)
     python b2_data_sync.py upload <file1> <file2> ...     # Upload specific files to B2
     python b2_data_sync.py upload data/*                   # Upload all files in data/
     python b2_data_sync.py list                            # List files in the bucket
@@ -87,17 +87,24 @@ class B2Sync:
         print("\nUpload complete")
 
     def download(self):
-        """Download all files from B2 to local data/ directory."""
+        """Download all data files from B2 to local data/ directory (excludes models/)."""
         print("Fetching file list from B2...")
 
         # List all files in bucket
-        files_in_bucket = list(self.bucket.ls(recursive=True, fetch_count=10000))
+        all_files = list(self.bucket.ls(fetch_count=10000))
+
+        # Filter out files in models/ directory
+        files_in_bucket = [
+            (file_version_info, folder_info)
+            for file_version_info, folder_info in all_files
+            if not file_version_info.file_name.startswith("models/")
+        ]
 
         if not files_in_bucket:
-            print("No files found in bucket")
+            print("No data files found in bucket")
             return
 
-        print(f"Found {len(files_in_bucket)} file(s) in bucket")
+        print(f"Found {len(files_in_bucket)} data file(s) in bucket")
 
         # Create data directory if it doesn't exist
         data_dir = self.project_root / "data"
@@ -246,7 +253,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python b2_data_sync.py download                               # Download all files from B2 to data/
+  python b2_data_sync.py download                               # Download data files from B2 to data/ (excludes models/)
   python b2_data_sync.py upload data/owt_train.txt              # Upload a specific file
   python b2_data_sync.py upload data/*.npy                      # Upload all .npy files in data/
   python b2_data_sync.py upload *.pickle data/*.txt             # Upload multiple patterns
