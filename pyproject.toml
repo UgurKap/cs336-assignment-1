@@ -25,6 +25,7 @@ dependencies = [
     "scalene>=1.5.55",
     "b2sdk>=2.10.2",
     "python-dotenv>=1.2.1",
+    "typer>=0.21.1",
 ]
 
 [build-system]
