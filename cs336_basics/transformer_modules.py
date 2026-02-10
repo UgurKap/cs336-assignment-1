@@ -360,10 +360,7 @@ class TransformerLMNoPE(Module):
         super().__init__()
         self.token_embeddings = Embedding(num_embeddings=vocab_size, embedding_dim=d_model)
         self.transformer_blocks = Sequential(
-            *[
-                TransformerBlockNoPE(d_model, num_heads, d_ff, max_seq_len=context_length)
-                for _ in range(num_layers)
-            ]
+            *[TransformerBlockNoPE(d_model, num_heads, d_ff, max_seq_len=context_length) for _ in range(num_layers)]
         )
         self.rms = RMSNorm(d_model)
         self.out_proj = Linear(d_model, vocab_size)
