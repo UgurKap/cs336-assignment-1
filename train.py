@@ -11,7 +11,8 @@ import shutil
 
 load_dotenv()
 
-models = {"standard-rope": transformer_modules.TransformerLM}
+models = {"standard-rope": transformer_modules.TransformerLM,
+          "no-norm": transformer_modules.TransformerLMNoNorm}
 optimizers = {"adamw": training_utils.AdamW, "sgd": training_utils.SGD}
 lr_schedules = {
     "lr_cosine_schedule": training_utils.lr_cosine_schedule,

@@ -155,4 +155,3 @@ def load_checkpoint(
     model.load_state_dict(obj["model_state"])
     optimizer.load_state_dict(obj["optimizer_state"])
     return obj["iteration"]
-
