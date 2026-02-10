@@ -16,6 +16,7 @@ models = {
     "no-norm": transformer_modules.TransformerLMNoNorm,
     "post-norm": transformer_modules.TransformerLMPostNorm,
     "nope": transformer_modules.TransformerLMNoPE,
+    "silu": transformer_modules.TransformerLMSiLU,
 }
 optimizers = {"adamw": training_utils.AdamW, "sgd": training_utils.SGD}
 lr_schedules = {
