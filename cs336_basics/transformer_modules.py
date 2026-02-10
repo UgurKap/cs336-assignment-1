@@ -361,7 +361,7 @@ class TransformerLMNoPE(Module):
         self.token_embeddings = Embedding(num_embeddings=vocab_size, embedding_dim=d_model)
         self.transformer_blocks = Sequential(
             *[
-                TransformerBlockNoPE(d_model, num_heads, d_ff, max_seq_len=context_length, theta=rope_theta)
+                TransformerBlockNoPE(d_model, num_heads, d_ff, max_seq_len=context_length)
                 for _ in range(num_layers)
             ]
         )
