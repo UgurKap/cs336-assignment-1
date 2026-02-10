@@ -1,6 +1,6 @@
 {
     "model": {
-        "type": "standard-rope",
+        "type": "silu",
         "params": {
             "vocab_size": 10000,
             "context_length": 256,
@@ -23,7 +23,7 @@
     },
     "data": {"train_path": "data/tiny_train_tokens.npy", "val_path": "data/tiny_valid_tokens.npy"},
     "checkpoints": {"freq": 512, "load_from": null, "save_dir": "models"},
-    "smoke_test": false,
+    "smoke_test": true,
     "device": "cuda",
     "precision": "bf16"
 }
