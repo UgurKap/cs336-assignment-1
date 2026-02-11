@@ -82,6 +82,17 @@ class SwiGLU(Module):
         return self.W2(op1 * op2)
 
 
+class SiLUFF(Module):
+    def __init__(self, d_model: int, d_ff: int):
+        super().__init__()
+        self.silu = SiLU()
+        self.W1 = Linear(in_features=d_model, out_features=d_ff)
+        self.W2 = Linear(in_features=d_ff, out_features=d_model)
+
+    def forward(self, x: Float[Tensor, "... d_model"]) -> Float[Tensor, "... d_model"]:
+        return self.W2(self.silu(self.W1(x)))
+
+
 class RotaryPositionalEmbedding(Module):
     def __init__(self, theta: float, d_k: int, max_seq_len: int, device: torch.device | None = None):
         super().__init__()
@@ -205,6 +216,60 @@ class TransformerBlock(Module):
         return out2
 
 
+class TransformerBlockSiLU(Module):
+    def __init__(self, d_model: int, num_heads: int, d_ff: int, max_seq_len: int = 1024, theta: float = 10_000):
+        super().__init__()
+        self.rms1 = RMSNorm(d_model)
+        self.rms2 = RMSNorm(d_model)
+        self.mha = MultiHeadSelfAttentionRoPE(d_model, num_heads, max_seq_len, theta)
+        self.ff = SiLUFF(d_model, d_ff)
+
+    def forward(self, x: Float[Tensor, "... seq_len d_model"]) -> Float[Tensor, "... seq_len d_model"]:
+        out1 = x + self.mha(self.rms1(x))
+        out2 = out1 + self.ff(self.rms2(out1))
+        return out2
+
+
+class TransformerBlockNoNorm(Module):
+    def __init__(self, d_model: int, num_heads: int, d_ff: int, max_seq_len: int = 1024, theta: float = 10_000):
+        super().__init__()
+        self.mha = MultiHeadSelfAttentionRoPE(d_model, num_heads, max_seq_len, theta)
+        self.ff = SwiGLU(d_model, d_ff)
+
+    def forward(self, x: Float[Tensor, "... seq_len d_model"]) -> Float[Tensor, "... seq_len d_model"]:
+        out1 = x + self.mha(x)
+        out2 = out1 + self.ff(out1)
+        return out2
+
+
+class TransformerBlockPostNorm(Module):
+    def __init__(self, d_model: int, num_heads: int, d_ff: int, max_seq_len: int = 1024, theta: float = 10_000):
+        super().__init__()
+        self.rms1 = RMSNorm(d_model)
+        self.rms2 = RMSNorm(d_model)
+        self.mha = MultiHeadSelfAttentionRoPE(d_model, num_heads, max_seq_len, theta)
+        self.ff = SwiGLU(d_model, d_ff)
+
+    def forward(self, x: Float[Tensor, "... seq_len d_model"]) -> Float[Tensor, "... seq_len d_model"]:
+        out1 = self.rms1(x + self.mha(x))
+        out2 = self.rms2(out1 + self.ff(out1))
+        return out2
+
+
+class TransformerBlockNoPE(Module):
+    def __init__(self, d_model: int, num_heads: int, d_ff: int, max_seq_len: int = 1024):
+        super().__init__()
+        self.rms1 = RMSNorm(d_model)
+        self.rms2 = RMSNorm(d_model)
+        self.mha = MultiHeadSelfAttention(d_model, num_heads, max_seq_len)
+        self.ff = SwiGLU(d_model, d_ff)
+
+    def forward(self, x: Float[Tensor, "... seq_len d_model"]) -> Float[Tensor, "... seq_len d_model"]:
+        out1 = x + self.mha(self.rms1(x))
+        out2 = out1 + self.ff(self.rms2(out1))
+        return out2
+
+
 class TransformerLM(Module):
     def __init__(
         self,
@@ -221,6 +286,105 @@ class TransformerLM(Module):
         self.transformer_blocks = Sequential(
             *[
                 TransformerBlock(d_model, num_heads, d_ff, max_seq_len=context_length, theta=rope_theta)
+                for _ in range(num_layers)
+            ]
+        )
+        self.rms = RMSNorm(d_model)
+        self.out_proj = Linear(d_model, vocab_size)
+
+    def forward(self, x: Int[Tensor, "batch seq_len"]) -> Float[Tensor, "batch seq_len vocab_size"]:
+        return self.out_proj(self.rms(self.transformer_blocks(self.token_embeddings(x))))
+
+
+class TransformerLMNoNorm(Module):
+    def __init__(
+        self,
+        vocab_size: int,
+        context_length: int,
+        d_model: int,
+        num_layers: int,
+        num_heads: int,
+        d_ff: int,
+        rope_theta: int,
+    ):
+        super().__init__()
+        self.token_embeddings = Embedding(num_embeddings=vocab_size, embedding_dim=d_model)
+        self.transformer_blocks = Sequential(
+            *[
+                TransformerBlockNoNorm(d_model, num_heads, d_ff, max_seq_len=context_length, theta=rope_theta)
+                for _ in range(num_layers)
+            ]
+        )
+        self.out_proj = Linear(d_model, vocab_size)
+
+    def forward(self, x: Int[Tensor, "batch seq_len"]) -> Float[Tensor, "batch seq_len vocab_size"]:
+        return self.out_proj(self.transformer_blocks(self.token_embeddings(x)))
+
+
+class TransformerLMPostNorm(Module):
+    def __init__(
+        self,
+        vocab_size: int,
+        context_length: int,
+        d_model: int,
+        num_layers: int,
+        num_heads: int,
+        d_ff: int,
+        rope_theta: int,
+    ):
+        super().__init__()
+        self.token_embeddings = Embedding(num_embeddings=vocab_size, embedding_dim=d_model)
+        self.transformer_blocks = Sequential(
+            *[
+                TransformerBlockPostNorm(d_model, num_heads, d_ff, max_seq_len=context_length, theta=rope_theta)
+                for _ in range(num_layers)
+            ]
+        )
+        self.out_proj = Linear(d_model, vocab_size)
+
+    def forward(self, x: Int[Tensor, "batch seq_len"]) -> Float[Tensor, "batch seq_len vocab_size"]:
+        return self.out_proj(self.transformer_blocks(self.token_embeddings(x)))
+
+
+class TransformerLMNoPE(Module):
+    def __init__(
+        self,
+        vocab_size: int,
+        context_length: int,
+        d_model: int,
+        num_layers: int,
+        num_heads: int,
+        d_ff: int,
+        rope_theta: int,
+    ):
+        super().__init__()
+        self.token_embeddings = Embedding(num_embeddings=vocab_size, embedding_dim=d_model)
+        self.transformer_blocks = Sequential(
+            *[TransformerBlockNoPE(d_model, num_heads, d_ff, max_seq_len=context_length) for _ in range(num_layers)]
+        )
+        self.rms = RMSNorm(d_model)
+        self.out_proj = Linear(d_model, vocab_size)
+
+    def forward(self, x: Int[Tensor, "batch seq_len"]) -> Float[Tensor, "batch seq_len vocab_size"]:
+        return self.out_proj(self.rms(self.transformer_blocks(self.token_embeddings(x))))
+
+
+class TransformerLMSiLU(Module):
+    def __init__(
+        self,
+        vocab_size: int,
+        context_length: int,
+        d_model: int,
+        num_layers: int,
+        num_heads: int,
+        d_ff: int,
+        rope_theta: int,
+    ):
+        super().__init__()
+        self.token_embeddings = Embedding(num_embeddings=vocab_size, embedding_dim=d_model)
+        self.transformer_blocks = Sequential(
+            *[
+                TransformerBlockSiLU(d_model, num_heads, d_ff, max_seq_len=context_length, theta=rope_theta)
                 for _ in range(num_layers)
             ]
         )
