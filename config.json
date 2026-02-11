@@ -1,8 +1,8 @@
 {
     "model": {
-        "type": "silu",
+        "type": "standard-rope",
         "params": {
-            "vocab_size": 10000,
+            "vocab_size": 32000,
             "context_length": 256,
             "d_model": 512,
             "num_layers": 4,
@@ -21,8 +21,8 @@
             "params": {"max_lr": 4e-3, "min_lr": 4e-4, "warmup_steps": 50, "cosine_cycle_steps": 5000}
         }
     },
-    "data": {"train_path": "data/tiny_train_tokens.npy", "val_path": "data/tiny_valid_tokens.npy"},
-    "checkpoints": {"freq": 512, "load_from": null, "save_dir": "models"},
+    "data": {"train_path": "data/owt_train_tokens.npy", "val_path": "data/owt_valid_tokens.npy"},
+    "checkpoints": {"freq": 500, "load_from": null, "save_dir": "models"},
     "smoke_test": false,
     "device": "cuda",
     "precision": "bf16"

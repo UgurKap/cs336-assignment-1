@@ -88,7 +88,7 @@ def train(cfg):
     dtype = torch.bfloat16 if precision == "bf16" else torch.float16 if precision == "fp16" else torch.float32
 
     cfg_with_uuid = {**cfg, "model_uuid": run_id}
-    run = wandb.init(project="cs336-a1-ablations", config=cfg_with_uuid, mode="disabled" if is_smoke_test else "online")
+    run = wandb.init(project="cs336-a1-owt", config=cfg_with_uuid, mode="disabled" if is_smoke_test else "online")
 
     if is_smoke_test:
         smoke_inputs, smoke_targets = training_utils.get_batch(train_data, batch_size, context_length, device, seed=0)
