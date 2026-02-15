@@ -53,7 +53,7 @@ class RMSNorm(Module):
         self.g = Parameter(torch.ones(size=(d_model,), device=device, dtype=dtype))
         self.eps = eps
 
-    def forward(self, x: Float[Tensor, "batch_size seq_len d_model"]) -> Float[Tensor, "batch_size seq_len d_model"]:
+    def forward(self, x: Float[Tensor, "... seq_len d_model"]) -> Float[Tensor, "... seq_len d_model"]:
         in_dtype = x.dtype
         x = x.to(torch.float32)
         result = (x / torch.sqrt(reduce(x * x, "... d_model -> ... 1", "mean") + self.eps)) * self.g
@@ -202,12 +202,65 @@ class MultiHeadSelfAttentionRoPE(Module):
         return self.output_projection(out)
 
 
+class MultiHeadSelfAttentionRoPEQKNorm(Module):
+    def __init__(
+        self,
+        d_model: int,
+        num_heads: int,
+        max_seq_len: int = 1024,
+        theta: float = 10_000,
+        device: torch.device | None = None,
+    ):
+        super().__init__()
+        self.register_buffer(
+            "mask", torch.tril(torch.ones(max_seq_len, max_seq_len, dtype=torch.bool, device=device)), persistent=False
+        )
+        d_k = d_v = d_model // num_heads
+        self.num_heads = num_heads
+        self.rms_q = RMSNorm(d_k, device=device)
+        self.rms_k = RMSNorm(d_k, device=device)
+        self.W_q = Linear(d_model, num_heads * d_k, device=device)
+        self.W_k = Linear(d_model, num_heads * d_k, device=device)
+        self.W_v = Linear(d_model, num_heads * d_v, device=device)
+        self.rope = RotaryPositionalEmbedding(theta=theta, d_k=d_k, max_seq_len=max_seq_len, device=device)
+        self.output_projection = Linear(num_heads * d_v, d_model, device=device)
+
+    def forward(
+        self, x: Float[Tensor, "... seq_len d_model"], pos_vector: Int[Tensor, "... seq_len"] | None = None
+    ) -> Float[Tensor, "... seq_len d_model"]:
+        seq_len = x.shape[-2]
+        if pos_vector is None:
+            pos_vector = torch.arange(0, seq_len, device=x.device)
+        k = self.rms_k(self.rope(rearrange(self.W_k(x), "b s (h d) -> b h s d", h=self.num_heads), pos_vector))
+        q = self.rms_q(self.rope(rearrange(self.W_q(x), "b s (h d) -> b h s d", h=self.num_heads), pos_vector))
+        v = rearrange(self.W_v(x), "b s (h d) -> b h s d", h=self.num_heads)
+        out = rearrange(
+            scaled_dot_product_attention(key=k, query=q, value=v, mask=self.mask[:seq_len, :seq_len]),
+            "batch head seq_len d_v -> batch seq_len (head d_v)",
+        )
+        return self.output_projection(out)
+
+
 class TransformerBlock(Module):
     def __init__(self, d_model: int, num_heads: int, d_ff: int, max_seq_len: int = 1024, theta: float = 10_000):
         super().__init__()
         self.rms1 = RMSNorm(d_model)
         self.rms2 = RMSNorm(d_model)
         self.mha = MultiHeadSelfAttentionRoPE(d_model, num_heads, max_seq_len, theta)
+        self.ff = SwiGLU(d_model, d_ff)
+
+    def forward(self, x: Float[Tensor, "... seq_len d_model"]) -> Float[Tensor, "... seq_len d_model"]:
+        out1 = x + self.mha(self.rms1(x))
+        out2 = out1 + self.ff(self.rms2(out1))
+        return out2
+
+
+class TransformerBlockQKNorm(Module):
+    def __init__(self, d_model: int, num_heads: int, d_ff: int, max_seq_len: int = 1024, theta: float = 10_000):
+        super().__init__()
+        self.rms1 = RMSNorm(d_model)
+        self.rms2 = RMSNorm(d_model)
+        self.mha = MultiHeadSelfAttentionRoPEQKNorm(d_model, num_heads, max_seq_len, theta)
         self.ff = SwiGLU(d_model, d_ff)
 
     def forward(self, x: Float[Tensor, "... seq_len d_model"]) -> Float[Tensor, "... seq_len d_model"]:
@@ -286,6 +339,32 @@ class TransformerLM(Module):
         self.transformer_blocks = Sequential(
             *[
                 TransformerBlock(d_model, num_heads, d_ff, max_seq_len=context_length, theta=rope_theta)
+                for _ in range(num_layers)
+            ]
+        )
+        self.rms = RMSNorm(d_model)
+        self.out_proj = Linear(d_model, vocab_size)
+
+    def forward(self, x: Int[Tensor, "batch seq_len"]) -> Float[Tensor, "batch seq_len vocab_size"]:
+        return self.out_proj(self.rms(self.transformer_blocks(self.token_embeddings(x))))
+
+
+class TransformerLMQKNorm(Module):
+    def __init__(
+        self,
+        vocab_size: int,
+        context_length: int,
+        d_model: int,
+        num_layers: int,
+        num_heads: int,
+        d_ff: int,
+        rope_theta: int,
+    ):
+        super().__init__()
+        self.token_embeddings = Embedding(num_embeddings=vocab_size, embedding_dim=d_model)
+        self.transformer_blocks = Sequential(
+            *[
+                TransformerBlockQKNorm(d_model, num_heads, d_ff, max_seq_len=context_length, theta=rope_theta)
                 for _ in range(num_layers)
             ]
         )
