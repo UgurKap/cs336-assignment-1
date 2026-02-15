@@ -83,7 +83,7 @@ cd ..
 uv run python train.py config.json
 ```
 
-Supports model variants (`standard-rope`, `no-norm`, `post-norm`, `nope`, `silu`), mixed precision (`bf16`/`fp16`/`fp32`), and gradient logging. Everything is controlled from the config file.
+Supports model variants (`standard-rope`, `no-norm`, `post-norm`, `nope`, `silu`, `qk-norm`), mixed precision (`bf16`/`fp16`/`fp32`), and gradient logging. Everything is controlled from the config file.
 
 ### Text generation
 
