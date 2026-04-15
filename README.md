@@ -16,7 +16,7 @@ Byte-level BPE tokenizer with regex-based pretokenization and special token supp
 
 ### Transformer LM
 
-~17M parameter GPT-2-style model with RMSNorm (pre-norm), RoPE, SwiGLU, and causal multi-head attention. Also implemented ablation variants: no normalization, post-norm, no positional embeddings, and SiLU without gating.
+~17M parameter Llama-style model with RMSNorm (pre-norm), RoPE, SwiGLU, and causal multi-head attention. Also implemented ablation variants: no normalization, post-norm, no positional embeddings, and SiLU without gating.
 
 ### Training infrastructure
 
